@@ -2,22 +2,24 @@ package com.jdblabs.gtd.cli
 
 import com.jdbernard.util.LightOptionParser
 import com.martiansoftware.nailgun.NGContext
+import java.security.MessageDigest
 import org.joda.time.DateMidnight
 import org.joda.time.DateTime
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
+//import org.slf4j.Logger
+//import org.slf4j.LoggerFactory
 
 public class GTDCLI {
 
-    public static final String VERSION = "0.1"
+    public static final String VERSION = "0.2"
     private static String EOL = System.getProperty("line.separator")
-
     private static GTDCLI nailgunInst
 
+    private MessageDigest md5 = MessageDigest.getInstance("MD5")
     private int terminalWidth
     private Scanner stdin
     private File workingDir
-    private Logger log = LoggerFactory.getLogger(getClass())
+    private Map<String, File> gtdDirs
+    //private Logger log = LoggerFactory.getLogger(getClass())
 
     public static void main(String[] args) {
         GTDCLI inst = new GTDCLI(new File(System.getProperty("user.home"),
@@ -79,13 +81,18 @@ public class GTDCLI {
 
         if (parsedArgs.size() < 1) printUsage()
 
-        log.debug("argument list: {}", parsedArgs)
+        gtdDirs = findGtdRootDir(workingDir)
+        if (!gtdDirs) {
+            println "fatal: '${workingDir.canonicalPath}'"
+            println "       is not a GTD repository (or any of the parent directories)."
+            return }
 
         while (parsedArgs.peek()) {
             def command = parsedArgs.poll()
 
             switch (command.toLowerCase()) {
-                case ~/help/: printUsafe(parsedArgs); break
+                case ~/help/: printUsage(parsedArgs); break
+                case ~/done/: done(parsedArgs); break
                 case ~/process/: process(parsedArgs); break
                 default: 
                     parsedArgs.addFirst(command)
@@ -93,39 +100,15 @@ public class GTDCLI {
                     break } } }
 
     protected void process(LinkedList args) {
-        def rootDir = workingDir
 
         def path = args.poll()
         if (path) {
             givenDir = new File(path)
-            if (givenDir.exists() && givenDir.isDirectory()) rootDir = givenDir
-            else { println "'$path' is not a valid directory."; return }}
-
-        def findGtdDir = { dirName ->
-            def dir = new File(rootDir, dirName)
-            if (!dir.exists() || !dir.isDirectory()) {
-                println "'${rootDir.canonicalPath}' is not a valid GTD " +
-                    "directory (missing the '$dirName' folder)."
-                return null }
-            else return dir }
-
-        // check to see if this is the parent GTD folder, in which case it
-        // should contain `in`, `incubate`, `next-actions`, `projects`,
-        // `tickler`, and `waiting` folders
-        def inDir, incubateDir, actionsDir, projectsDir, ticklerDir,
-            waitingDir, doneDir
-        
-        if (!(inDir = findGtdDir("in")) ||
-            !(incubateDir = findGtdDir("incubate")) ||
-            !(doneDir = findGtdDir("done")) ||
-            !(actionsDir = findGtdDir("next-actions")) ||
-            !(projectsDir = findGtdDir("projects")) ||
-            !(ticklerDir = findGtdDir("tickler")) ||
-            !(waitingDir = findGtdDir("waiting")))
-            return
+            if (!(gtdDirs = findGtdRootDir(givenPath))) {
+                println "'$path' is not a valid directory."; return }}
 
         // Start processing items
-        inDir.listFiles().collect { new Item(it) }.each { item ->
+        gtdDirs.in.listFiles().collect { new Item(it) }.each { item ->
 
             println ""
             def response
@@ -165,7 +148,7 @@ public class GTDCLI {
                         print "> " }
 
                     def oldFile = item.file
-                    item.file = new File(incubateDir, item.file.name)
+                    item.file = new File(gtdDirs.incubate, item.file.name)
                     item.save()
                     oldFile.delete() }
 
@@ -180,7 +163,7 @@ public class GTDCLI {
 
                     def date = new DateMidnight().toString("YYYY-MM-dd")
                     def oldFile = item.file
-                    item.file = new File(doneDir, "$date-${item.file.name}")
+                    item.file = new File(gtdDirs.done, "$date-${item.file.name}")
                     item.save()
                     oldFile.delete()
                     return }
@@ -205,7 +188,7 @@ public class GTDCLI {
                 // Needs to be a project
                 if (response ==~ /yes|y/) {
                     def oldFile = item.file
-                    item.file = new File(projectsDir,
+                    item.file = new File(gtdDirs.projects,
                                          stringToFilename(item.outcome))
                     item.save()
                     oldFile.delete()
@@ -223,12 +206,12 @@ public class GTDCLI {
                             "Next action (who needs to do what).", ""])
 
                         def oldFile = item.file
-                        item.file = new File(waitingDir,
+                        item.file = new File(gtdDirs.waiting,
                                              stringToFilename(item.action))
                         item.save()
                         oldFile.delete()
 
-                        println "Moved to ${waitingDir.name} folder." }
+                        println "Moved to ${gtdDirs.waiting.name} folder." }
 
 
                     // Defer
@@ -236,12 +219,12 @@ public class GTDCLI {
                         item.action = prompt(["Next action.", ""])
 
                         def oldFile = item.file
-                        item.file = new File(actionsDir,
+                        item.file = new File(gtdDirs["next-actions"],
                                              stringToFilename(item.action))
                         item.save()
                         oldFile.delete()
 
-                        println "Moved to the ${actionsDir.name} folder."
+                        println "Moved to the ${gtdDirs['next-actions'].name} folder."
                     }
 
                     // Tickle
@@ -252,11 +235,53 @@ public class GTDCLI {
                             "(YYYY-MM-DD)"])
 
                         def oldFile = item.file
-                        item.file = new File(ticklerDir,
+                        item.file = new File(gtdDirs.tickler,
                                              stringToFilename(item.action))
                         item.save()
                         oldFile.delete()
-                        println "Moved to the ${ticklerDir.name} folder." } } } } }
+                        println "Moved to the ${gtdDirs.tickler.name} folder." } } } } }
+
+    protected void done(LinkedList args) {
+
+        def selectedFile = args.poll()
+
+        if (!selectedFile) {
+            println "gtd done command requires a <action-file> parameter."
+            return }
+
+        def item = new Item(new File(workingDir, selectedFile))
+        def itemMd5 = md5.digest(item.file.bytes)
+
+        // Move to the done folder.
+        def oldFile = item.file
+        def date = new DateMidnight().toString("YYYY-MM-dd")
+        item.file = new File(gtdDirs.done, "$date-${item.file.name}")
+        item.save()
+
+        // Check if this item was in a project folder.
+        if (inPath(gtdDirs.projects, oldFile)) {
+
+            // Delete any copies of this item in the next actions folder.
+            gtdDirs["next-actions"].eachFileRecurse({ file -> 
+                if (file.isFile() && md5.digest(file.bytes) == itemMd5) {
+                    println "Deleting duplicate entry from the " +
+                        "${file.parentFile.name} context."
+                    file.delete() }})}
+
+        // Check if this item was in the next-action folder.
+        if (inPath(gtdDirs["next-actions"], oldFile)) {
+
+            // Delete any copies of this item in the next actions folder.
+            gtdDirs.projects.eachFileRecurse({ file ->
+                if (file.isFile() && md5.digest(file.bytes) == itemMd5) {
+                    println "Deleting duplicate entry from the " +
+                        "${file.parentFile.name} project."
+                    file.delete() }})}
+
+        // Delete the original
+        oldFile.delete()
+
+        println "'$item' marked as done." }
     
     protected void printUsage(LinkedList args) {
 
@@ -278,10 +303,48 @@ public class GTDCLI {
             def command = args.poll()
 
             // TODO
-            //switch(command.toLowerCase()) {
+            //switch(command.toLowerCase())
             //    case ~/process/:
         }
     }
+
+    protected boolean inPath(File parent, File child) {
+        def parentPath = parent.canonicalPath.split("/")
+        def childPath = child.canonicalPath.split("/")
+
+        // If the parent path is longer than the child path it cannot contain
+        // the child path.
+        if (parentPath.length > childPath.length) return false;
+
+        // If the parent and child paths do not match at any point, the parent
+        // path does not contain the child path.
+        for (int i = 0; i < parentPath.length; i++)
+            if (childPath[i] != parentPath[i])
+                return false;
+
+        // The parent path is at least as long as the child path, and the child
+        // path matches the parent path (up until the end of the parent path).
+        // The child path either is the parent path or is contained by the
+        // parent path.
+        return true }
+
+    protected Map findGtdRootDir(File givenDir) {
+
+        def gtdDirs = [:]
+
+        File currentDir = givenDir
+        while (currentDir != null) {
+            gtdDirs = ["in", "incubate", "done", "next-actions", "projects",
+                       "tickler", "waiting"].
+                collectEntries { [it, new File(currentDir, it)] }
+
+            if (gtdDirs.values().every { dir -> dir.exists() && dir.isDirectory() }) {
+                gtdDirs.root = currentDir
+                return gtdDirs }
+
+            currentDir = currentDir.parentFile }
+
+        return [:] }
 
     static String filenameToString(File f) {
         return f.name.replaceAll(/[-_]/, " ").capitalize() }
