@@ -10,7 +10,7 @@ import org.joda.time.DateTime
 
 public class GTDCLI {
 
-    public static final String VERSION = "0.2"
+    public static final String VERSION = "0.3"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
@@ -93,6 +93,7 @@ public class GTDCLI {
             switch (command.toLowerCase()) {
                 case ~/help/: printUsage(parsedArgs); break
                 case ~/done/: done(parsedArgs); break
+                case ~/cal|calendar/: calendar(parsedArgs); break
                 case ~/process/: process(parsedArgs); break
                 default: 
                     parsedArgs.addFirst(command)
@@ -103,7 +104,7 @@ public class GTDCLI {
 
         def path = args.poll()
         if (path) {
-            givenDir = new File(path)
+            def givenDir = new File(path)
             if (!(gtdDirs = findGtdRootDir(givenPath))) {
                 println "'$path' is not a valid directory."; return }}
 
@@ -243,13 +244,17 @@ public class GTDCLI {
 
     protected void done(LinkedList args) {
 
-        def selectedFile = args.poll()
+        def selectedFilePath = args.poll()
+        def selectedFile = new File(selectedFilePath)
 
         if (!selectedFile) {
             println "gtd done command requires a <action-file> parameter."
             return }
 
-        def item = new Item(new File(workingDir, selectedFile))
+        def item
+        if (selectedFile.isAbsolute()) item = new Item(selectedFile)
+        else item = new Item(new File(workingDir, selectedFilePath))
+
         def itemMd5 = md5.digest(item.file.bytes)
 
         // Move to the done folder.
@@ -266,12 +271,20 @@ public class GTDCLI {
                 if (file.isFile() && md5.digest(file.bytes) == itemMd5) {
                     println "Deleting duplicate entry from the " +
                         "${file.parentFile.name} context."
+                    file.delete() }})
+
+            // Delete any copies of this item in the waiting folder.
+            gtdDirs.waiting.eachFileRecurse({ file -> 
+                if (file.isFile() && md5.digest(file.bytes) == itemMd5) {
+                    println "Deleting duplicate entry from the " +
+                        "${file.parentFile.name} waiting context."
                     file.delete() }})}
 
-        // Check if this item was in the next-action folder.
-        if (inPath(gtdDirs["next-actions"], oldFile)) {
+        // Check if this item was in the next-action or waiting folder.
+        if (inPath(gtdDirs["next-actions"], oldFile) ||
+            inPath(gtdDirs.waiting, oldFile)) {
 
-            // Delete any copies of this item in the next actions folder.
+            // Delete any copies of this item in the projects folder.
             gtdDirs.projects.eachFileRecurse({ file ->
                 if (file.isFile() && md5.digest(file.bytes) == itemMd5) {
                     println "Deleting duplicate entry from the " +
@@ -283,6 +296,34 @@ public class GTDCLI {
 
         println "'$item' marked as done." }
     
+    protected void calendar(LinkedList args) {
+        def itemsOnCalendar = []
+
+        def addCalendarItems = { file ->
+            if (!file.isFile()) return
+            def item = new Item(file)
+            if (item.date) itemsOnCalendar << item }
+
+        gtdDirs."next-actions".eachFileRecurse(addCalendarItems)
+        gtdDirs.waiting.eachFileRecurse(addCalendarItems)
+        gtdDirs.projects.eachFileRecurse(addCalendarItems)
+
+        itemsOnCalendar = itemsOnCalendar.unique { md5.digest(it.file.bytes) }.
+                                          sort { it.date }
+
+        if (!itemsOnCalendar) println "No items on the calendar."
+
+        def currentDate = null
+            
+        itemsOnCalendar.each { item ->
+            def itemDay = new DateMidnight(item.date)
+            if (itemDay != currentDate) {
+                println itemDay.toString("EEE, MM/dd")
+                println "----------"
+                currentDate = itemDay }
+
+            println "  $item" } }
+
     protected void printUsage(LinkedList args) {
 
         if (!args) {
@@ -297,14 +338,67 @@ public class GTDCLI {
             println ""
             println "top-leve commands:"
             println ""
-            println "   process            Process inbox items systematically."
             println "   help <command>     Print detailed help about a command."
+            println "   process            Process inbox items systematically."
+            println "   done <action-file> Mark an action as done. This will automatically "
+            println "                      take care of duplicates of the action in project "
+            println "                      or next-actions sub-folders."
         } else {
             def command = args.poll()
 
-            // TODO
-            //switch(command.toLowerCase())
-            //    case ~/process/:
+            switch(command.toLowerCase()) {
+                case ~/process/: println """\
+usage: gtd process
+
+This is an interactive command.
+
+GTD CLI goes through all the items in the "in" folder for this GTD repository
+and guides you through the *process* step of the GTD method as follows:
+
+                Is the item actionable?
+                           V
+                           +---------------------------> No
+                           |                           /   \\
+                          Yes                 Incubate       Trash
+                           |              (Someday/Maybe)
+                           V
+         Yes <--Too big for one action? --> No
+          |                                 |
+          V                                 |
+  Move to projects                          V
+(still needs organization)        What is the next action?
+                                          / 
+                                         / 
+                          Defer, delegate, or tickler?
+                          /         |              \\
+                         /     Move to the       Set a date for this
+              Move to the        waiting       to become active again.
+              next-actions      directory        Move to the tickler
+              directory                              directory."""
+                    break
+
+                case ~/done/: println """\
+usage: gtd done <action-file>
+
+Where <action-file> is expected to be the path (absolute or relative) to an
+action item file. The action item file is expected to be in the *projects*
+folder, the *next-actions* folder, the *waiting* folder, or a subfolder of one of
+the aforementioned folders. The item is prepended with the current date and
+moved to the *done* folder. If the item was in a project folder, the
+*next-actions* and *waiting* folders are scanned recursively for duplicates of
+the item, which are removed if found. Similarly, if the action was in a
+*next-actions* or *waiting* folder the *projects* folder is scanned recursively
+for duplicates.
+
+The intention of the duplicate removal is to allow you to copy actions from
+project folders into next action or waiting contexts, so you can keep a view of
+the item organized by the project or in your next actions list. The GTD CLI tool
+is smart enough to recognize that these are the same items filed in more than
+one place and deal with them all in one fell swoop. Duplicates are determined by
+exact file contents (MD5 has of the file contents)."""
+                    break
+
+            }
         }
     }
 
@@ -351,7 +445,7 @@ public class GTDCLI {
 
     static String stringToFilename(String s) {
         return s.replaceAll(/\s/, '-').
-                replaceAll(/[';:]/, '').
+                replaceAll(/[';:(\.$)]/, '').
                 toLowerCase() }
 }
 
