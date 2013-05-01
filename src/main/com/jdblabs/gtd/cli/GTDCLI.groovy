@@ -10,7 +10,7 @@ import org.joda.time.DateTime
 
 public class GTDCLI {
 
-    public static final String VERSION = "0.6"
+    public static final String VERSION = "0.7"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
@@ -96,7 +96,7 @@ public class GTDCLI {
                 case ~/cal|calendar/: calendar(parsedArgs); break
                 case ~/process/: process(parsedArgs); break
                 case ~/list-copies/: listCopies(parsedArgs); break
-                case ~/new/: newAction(parsedArgs);
+                case ~/new/: newAction(parsedArgs); break
                 default: 
                     println "Unrecognized command: ${command}"
                     break } } }
@@ -338,8 +338,10 @@ public class GTDCLI {
 
     protected void newAction(LinkedList args) {
 
-        def response = prompt("Next action?", "")
-        def item = new Item(new File(workingDir, stringToFilename(response)))
+        def response = prompt(["Next action?", ""])
+        def file = new File(workingDir, stringToFilename(response))
+        file.createNewFile()
+        def item = new Item(file)
         
         item.action = response
 
@@ -348,7 +350,7 @@ public class GTDCLI {
         println "End with an empty line."
         print "> "
 
-        while (response = stdin.readLine().trim()) {
+        while (response = stdin.nextLine().trim()) {
             if (!(response =~ /[:=]/)) continue
             def parts = response.split(/[:=]/)
             item[parts[0].trim().toLowerCase()] =
@@ -530,7 +532,7 @@ directory."""
 
         return [:] }
 
-    protected String prompt(String message) {
+    protected String prompt(def msg) {
         if (msg instanceof List) msg = msg.join(EOL)
         msg += "> "
         print msg
