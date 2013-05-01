@@ -10,7 +10,7 @@ import org.joda.time.DateTime
 
 public class GTDCLI {
 
-    public static final String VERSION = "0.3.1"
+    public static final String VERSION = "0.4"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
@@ -95,9 +95,9 @@ public class GTDCLI {
                 case ~/done/: done(parsedArgs); break
                 case ~/cal|calendar/: calendar(parsedArgs); break
                 case ~/process/: process(parsedArgs); break
+                case ~/list-copies/: listCopies(parsedArgs); break
                 default: 
-                    parsedArgs.addFirst(command)
-                    process(parsedArgs)
+                    println "Unrecognized command: ${command}"
                     break } } }
 
     protected void process(LinkedList args) {
@@ -267,29 +267,26 @@ public class GTDCLI {
         if (inPath(gtdDirs.projects, oldFile)) {
 
             // Delete any copies of this item in the next actions folder.
-            gtdDirs["next-actions"].eachFileRecurse({ file -> 
-                if (file.isFile() && md5.digest(file.bytes) == itemMd5) {
-                    println "Deleting duplicate entry from the " +
+            findAllCopies(oldFile, gtdDrs."next-actions").each { file ->
+                println "Deleting duplicate entry from the " +
                         "${file.parentFile.name} context."
-                    file.delete() }})
+                file.delete() }
 
             // Delete any copies of this item in the waiting folder.
-            gtdDirs.waiting.eachFileRecurse({ file -> 
-                if (file.isFile() && md5.digest(file.bytes) == itemMd5) {
-                    println "Deleting duplicate entry from the " +
-                        "${file.parentFile.name} waiting context."
-                    file.delete() }})}
+            findAllCopies(oldFile, gtdDirs.waiting).each { file ->
+                println "Deleting duplicate entry from the " +
+                    "${file.parentFile.name} waiting context."
+                file.delete() }}
 
         // Check if this item was in the next-action or waiting folder.
         if (inPath(gtdDirs["next-actions"], oldFile) ||
             inPath(gtdDirs.waiting, oldFile)) {
 
             // Delete any copies of this item in the projects folder.
-            gtdDirs.projects.eachFileRecurse({ file ->
-                if (file.isFile() && md5.digest(file.bytes) == itemMd5) {
-                    println "Deleting duplicate entry from the " +
-                        "${file.parentFile.name} project."
-                    file.delete() }})}
+            findAllCopies(oldFile, gtdDirs.projects).each { file ->
+                println "Deleting duplicate entry from the " +
+                    "${file.parentFile.name} project."
+                file.delete() }}
 
         // Delete the original
         oldFile.delete()
@@ -323,6 +320,28 @@ public class GTDCLI {
                 currentDate = itemDay }
 
             println "  $item" } }
+
+    protected void listCopies(LinkedList args) {
+
+        args.each { filePath ->
+            def file = new File(filePath)
+
+            if (!file.isAbsolute()) file = new File(workingDir, filePath)
+
+            if (!file.isFile()) {
+                println "${file.canonicalPath} is not a regular file."
+                return }
+
+            String originalRelativePath = getRelativePath(gtdDirs.root, file)
+            println "Copies of $originalRelativePath:"
+            println ""
+
+            findAllCopies(file, gtdDirs.root).each { copy ->
+                if (copy.canonicalPath != file.canonicalPath) {
+                    String relativePath = getRelativePath(gtdDirs.root, copy)
+                    println "  $relativePath" }} }
+
+        args.clear() }
 
     protected void printUsage(LinkedList args) {
 
@@ -402,6 +421,16 @@ exact file contents (MD5 has of the file contents)."""
         }
     }
 
+    protected List<File> findAllCopies(File original, File inDir) {
+        def copies = []
+        def originalMD5 = md5.digest(original.bytes)
+
+        inDir.eachFileRecurse { file -> 
+            if (file.isFile() && md5.digest(file.bytes) == originalMD5)
+                copies << file }
+        
+        return copies }
+
     protected boolean inPath(File parent, File child) {
         def parentPath = parent.canonicalPath.split("/")
         def childPath = child.canonicalPath.split("/")
@@ -421,6 +450,18 @@ exact file contents (MD5 has of the file contents)."""
         // The child path either is the parent path or is contained by the
         // parent path.
         return true }
+
+    protected String getRelativePath(File parent, File child) {
+        def parentPath = parent.canonicalPath.split("/")
+        def childPath = child.canonicalPath.split("/")
+
+        if (parentPath.length > childPath.length) return ""
+
+        int b = 0
+        while (b < parentPath.length && parentPath[b] == childPath[b] ) b++;
+
+        if (b != parentPath.length) return ""
+        return (['.'] + childPath[b..<childPath.length]).join('/') }
 
     protected Map findGtdRootDir(File givenDir) {
 
