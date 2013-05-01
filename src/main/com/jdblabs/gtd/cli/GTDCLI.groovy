@@ -10,7 +10,7 @@ import org.joda.time.DateTime
 
 public class GTDCLI {
 
-    public static final String VERSION = "0.3"
+    public static final String VERSION = "0.3.1"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
@@ -105,7 +105,7 @@ public class GTDCLI {
         def path = args.poll()
         if (path) {
             def givenDir = new File(path)
-            if (!(gtdDirs = findGtdRootDir(givenPath))) {
+            if (!(gtdDirs = findGtdRootDir(givenDir))) {
                 println "'$path' is not a valid directory."; return }}
 
         // Start processing items
