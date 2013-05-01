@@ -10,7 +10,7 @@ import org.joda.time.DateTime
 
 public class GTDCLI {
 
-    public static final String VERSION = "0.4"
+    public static final String VERSION = "0.5"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
@@ -315,6 +315,7 @@ public class GTDCLI {
         itemsOnCalendar.each { item ->
             def itemDay = new DateMidnight(item.date)
             if (itemDay != currentDate) {
+                if (currentDate != null) println ""
                 println itemDay.toString("EEE, MM/dd")
                 println "----------"
                 currentDate = itemDay }
