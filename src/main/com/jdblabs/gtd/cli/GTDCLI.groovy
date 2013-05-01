@@ -10,7 +10,7 @@ import org.joda.time.DateTime
 
 public class GTDCLI {
 
-    public static final String VERSION = "0.5"
+    public static final String VERSION = "0.6"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
@@ -96,6 +96,7 @@ public class GTDCLI {
                 case ~/cal|calendar/: calendar(parsedArgs); break
                 case ~/process/: process(parsedArgs); break
                 case ~/list-copies/: listCopies(parsedArgs); break
+                case ~/new/: newAction(parsedArgs);
                 default: 
                     println "Unrecognized command: ${command}"
                     break } } }
@@ -114,15 +115,6 @@ public class GTDCLI {
             println ""
             def response
             def readline = {stdin.nextLine().trim()}
-            def prompt = { msg ->
-                if (msg instanceof List) msg = msg.join(EOL)
-                msg += "> "
-                print msg
-                def line
-                
-                while(!(line = readline())) print msg 
-                
-                return line }
 
             // 1. Is it actionable?
             if (!item.title) item.title = filenameToString(item.file)
@@ -344,25 +336,54 @@ public class GTDCLI {
 
         args.clear() }
 
+    protected void newAction(LinkedList args) {
+
+        def response = prompt("Next action?", "")
+        def item = new Item(new File(workingDir, stringToFilename(response)))
+        
+        item.action = response
+
+        println "Enter extra info. One 'key: value' pair per line."
+        println "(ex: date: YYYY-MM-DD, project=my-project)"
+        println "End with an empty line."
+        print "> "
+
+        while (response = stdin.readLine().trim()) {
+            if (!(response =~ /[:=]/)) continue
+            def parts = response.split(/[:=]/)
+            item[parts[0].trim().toLowerCase()] =
+                PropertyHelp.parse(parts[1].trim())
+            print "> " }
+
+        item.save() }
+
     protected void printUsage(LinkedList args) {
 
         if (!args) {
-            println "Jonathan Bernard's Getting Things Done CLI v$VERSION"
-            println "usage: gtd [option...] <command>..."
-            println ""
-            println "options are:"
-            println ""
-            println "   -h, --help         Print this usage information."
-            println "   -d, --directory    Set the GTD root directory."
-            println "   -v, --version      Print the GTD CLI version."
-            println ""
-            println "top-leve commands:"
-            println ""
-            println "   help <command>     Print detailed help about a command."
-            println "   process            Process inbox items systematically."
-            println "   done <action-file> Mark an action as done. This will automatically "
-            println "                      take care of duplicates of the action in project "
-            println "                      or next-actions sub-folders."
+            println """\
+Jonathan Bernard's Getting Things Done CLI v$VERSION
+usage: gtd [option...] <command>...
+
+options are:
+
+   -h, --help                  Print this usage information.
+   -d, --directory             Set the GTD root directory.
+   -v, --version               Print the GTD CLI version.
+                              
+top-level commands:           
+                              
+   help <command>              Print detailed help about a command.
+   process                     Process inbox items systematically.
+   done <action-file>          Mark an action as done. This will automatically
+                               take care of duplicates of the action in project 
+                               or next-actions sub-folders.
+   calendar                    Show the tasks with specific days assigned to
+                               them, sorted by date.
+   list-copies <action-file>   Given an action item, list all the other places
+                               there the same item is filed (cross-reference
+                               with a project folder, for example).
+   new                         Interactively create a new action item in the
+                               current folder."""
         } else {
             def command = args.poll()
 
@@ -418,6 +439,33 @@ one place and deal with them all in one fell swoop. Duplicates are determined by
 exact file contents (MD5 has of the file contents)."""
                     break
 
+                case ~/calendar/: println """\
+usage: gtd calendar
+
+Print an agenda of all the actions that are on the calendar, sorted by date.
+This prints a date heading first, then all of the actions assogned to that day.
+Remember that in the GTD calendar items are supposed to be hard dates, IE.
+things that *must* be done on the assigned date."""
+                    break
+
+                case ~/list-copies/: println """\
+usage: gtd list-copies <action-file>
+
+Where <action-file> is expected to be the path (absolute or relative) to an
+action item file.
+
+This command searched through the current GTD repository for any items that are
+duplicates of this item."""
+                    break
+
+                case ~/new/: println """\
+usage: gtd new
+
+This command is interactive (maybe allow it to take interactive prompts in the
+future?). It prompts the user for the next action and any extended properties
+that should be associated with it, then creates the action file in the current
+directory."""
+                    break
             }
         }
     }
@@ -482,6 +530,16 @@ exact file contents (MD5 has of the file contents)."""
 
         return [:] }
 
+    protected String prompt(String message) {
+        if (msg instanceof List) msg = msg.join(EOL)
+        msg += "> "
+        print msg
+        def line
+        
+        while(!(line = stdin.nextLine().trim())) print msg 
+        
+        return line }
+
     static String filenameToString(File f) {
         return f.name.replaceAll(/[-_]/, " ").capitalize() }
 
@@ -489,5 +547,6 @@ exact file contents (MD5 has of the file contents)."""
         return s.replaceAll(/\s/, '-').
                 replaceAll(/[';:(\.$)]/, '').
                 toLowerCase() }
+
 }
 
