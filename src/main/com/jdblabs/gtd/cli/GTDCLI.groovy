@@ -10,7 +10,7 @@ import org.joda.time.DateTime
 
 public class GTDCLI {
 
-    public static final String VERSION = "0.7"
+    public static final String VERSION = "0.8"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
@@ -259,7 +259,7 @@ public class GTDCLI {
         if (inPath(gtdDirs.projects, oldFile)) {
 
             // Delete any copies of this item in the next actions folder.
-            findAllCopies(oldFile, gtdDrs."next-actions").each { file ->
+            findAllCopies(oldFile, gtdDirs."next-actions").each { file ->
                 println "Deleting duplicate entry from the " +
                         "${file.parentFile.name} context."
                 file.delete() }
