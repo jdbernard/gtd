@@ -10,7 +10,7 @@ import org.joda.time.DateTime
 
 public class GTDCLI {
 
-    public static final String VERSION = "0.8"
+    public static final String VERSION = "0.9"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
@@ -97,6 +97,7 @@ public class GTDCLI {
                 case ~/process/: process(parsedArgs); break
                 case ~/list-copies/: listCopies(parsedArgs); break
                 case ~/new/: newAction(parsedArgs); break
+                case ~/tickler/: tickler(parsedArgs); break
                 default: 
                     println "Unrecognized command: ${command}"
                     break } } }
@@ -359,6 +360,23 @@ public class GTDCLI {
 
         item.save() }
 
+    protected void tickler(LinkedList args) {
+
+        gtdDirs.tickler.eachFileRecurse { file ->
+            def item = new Item(file)
+            def today = new DateMidnight()
+
+            // If the item is scheduled to be tickled today (or in the past)
+            // then move it into the next-actions folder
+            if ((item.tickle as DateMidnight) <= today) {
+                println "Moving '${item.action}' out of the tickler."
+                def oldFile = item.file
+                item.file = new File(gtdDirs."next-actions",
+                                     stringToFilename(item.action))
+                item.gtdProperties.remove("tickle")
+                item.save()
+                oldFile.delete() }}}
+
     protected void printUsage(LinkedList args) {
 
         if (!args) {
@@ -385,7 +403,10 @@ top-level commands:
                                there the same item is filed (cross-reference
                                with a project folder, for example).
    new                         Interactively create a new action item in the
-                               current folder."""
+                               current folder.
+   tickler                     Search the tickler file for items that need to be
+                               delivered and move them to the *next-actions*
+                               folder."""
         } else {
             def command = args.poll()
 
@@ -467,6 +488,14 @@ This command is interactive (maybe allow it to take interactive prompts in the
 future?). It prompts the user for the next action and any extended properties
 that should be associated with it, then creates the action file in the current
 directory."""
+                    break
+
+                case ~/tickler/: println """\
+usage: gtd tickler
+
+This command should be scheduled for execution once a day. It checks the tickler
+file for any items that should become active (based on their <tickle> property)
+and moves them out of the tickler file and into the next-actions file."""
                     break
             }
         }
