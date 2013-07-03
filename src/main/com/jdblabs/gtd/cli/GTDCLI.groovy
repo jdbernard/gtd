@@ -10,7 +10,7 @@ import org.joda.time.DateTime
 
 public class GTDCLI {
 
-    public static final String VERSION = "0.9"
+    public static final String VERSION = "1.0"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
@@ -98,6 +98,7 @@ public class GTDCLI {
                 case ~/list-copies/: listCopies(parsedArgs); break
                 case ~/new/: newAction(parsedArgs); break
                 case ~/tickler/: tickler(parsedArgs); break
+                case ~/ls|list-context/: ls(parsedArgs); break;
                 default: 
                     println "Unrecognized command: ${command}"
                     break } } }
@@ -377,6 +378,38 @@ public class GTDCLI {
                 item.save()
                 oldFile.delete() }}}
 
+    protected void ls(LinkedList args) {
+
+        def context = args.poll()
+
+        if (!context) return
+
+        def contextNextActions = new File(gtdDirs['next-actions'], context)
+        def contextWaiting = new File(gtdDirs.waiting, context)
+
+        def printItems = { dir ->
+            dir.eachFile { file ->
+                def item = new Item(file)
+                println item.action }
+
+            println "" }
+
+        if (!contextNextActions.exists())
+            println "next-actions/${context} does not exist, skipping"
+        else if (!contextNextActions.isDirectory())
+            println "next-actions/${context} is not a directory, skipping"
+        else {
+            println "-- next-actions/${context} --"
+            printItems(contextNextActions) }
+
+        if (!contextWaiting.exists())
+            println "waiting/${context} does not exist, skipping"
+        else if (!contextWaiting.isDirectory())
+            println "waiting/${context} is not a directory, skipping"
+        else {
+            println "-- waiting/${context} --"
+            printItems(contextWaiting) } }
+
     protected void printUsage(LinkedList args) {
 
         if (!args) {
@@ -497,6 +530,13 @@ This command should be scheduled for execution once a day. It checks the tickler
 file for any items that should become active (based on their <tickle> property)
 and moves them out of the tickler file and into the next-actions file."""
                     break
+
+                case ~/ls|list-context/: println """\
+usage gtd ls <context> [<context> ...]
+
+This command lists all the tasks for a given context. The purpose is to list in
+one place items that are sitting in the next-actions folder or the waiting
+folder for a specific context."""
             }
         }
     }
