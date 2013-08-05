@@ -10,7 +10,7 @@ import org.joda.time.DateTime
 
 public class GTDCLI {
 
-    public static final String VERSION = "1.0"
+    public static final String VERSION = "1.1"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
@@ -98,7 +98,7 @@ public class GTDCLI {
                 case ~/list-copies/: listCopies(parsedArgs); break
                 case ~/new/: newAction(parsedArgs); break
                 case ~/tickler/: tickler(parsedArgs); break
-                case ~/ls|list-context/: ls(parsedArgs); break;
+                case ~/ls|list/: ls(parsedArgs); break;
                 default: 
                     println "Unrecognized command: ${command}"
                     break } } }
@@ -380,35 +380,33 @@ public class GTDCLI {
 
     protected void ls(LinkedList args) {
 
-        def context = args.poll()
-
-        if (!context) return
-
-        def contextNextActions = new File(gtdDirs['next-actions'], context)
-        def contextWaiting = new File(gtdDirs.waiting, context)
+        def target = args.poll()
 
         def printItems = { dir ->
+            if (!dir.exists() || !dir.isDirectory()) return
+            println "-- ${getRelativePath(gtdDirs.root, dir)} --"
             dir.eachFile { file ->
+                if (!file.exists() || !file.isFile() || file.isHidden())
+                    return
+
                 def item = new Item(file)
                 println item.action }
 
             println "" }
 
-        if (!contextNextActions.exists())
-            println "next-actions/${context} does not exist, skipping"
-        else if (!contextNextActions.isDirectory())
-            println "next-actions/${context} is not a directory, skipping"
-        else {
-            println "-- next-actions/${context} --"
-            printItems(contextNextActions) }
+        // If we have a named context or project, look for those items
+        // specifically
+        if (target) {
 
-        if (!contextWaiting.exists())
-            println "waiting/${context} does not exist, skipping"
-        else if (!contextWaiting.isDirectory())
-            println "waiting/${context} is not a directory, skipping"
+            printItems(new File(gtdDirs['next-actions'], target))
+            printItems(new File(gtdDirs.waiting, target))
+            printItems(new File(gtdDirs.projects, target)) }
+
         else {
-            println "-- waiting/${context} --"
-            printItems(contextWaiting) } }
+            printItems(gtdDirs['next-actions'])
+            printItems(gtdDirs['waiting'])
+            gtdDirs['next-actions'].eachDir(printItems)
+            gtdDirs['waiting'].eachDir(printItems) } }
 
     protected void printUsage(LinkedList args) {
 
@@ -532,11 +530,12 @@ and moves them out of the tickler file and into the next-actions file."""
                     break
 
                 case ~/ls|list-context/: println """\
-usage gtd ls <context> [<context> ...]
+usage gtd ls [<context> ...]
 
-This command lists all the tasks for a given context. The purpose is to list in
-one place items that are sitting in the next-actions folder or the waiting
-folder for a specific context."""
+This command lists all the tasks for a given context or project. The purpose is
+to list in one place items that are sitting in the next-actions folder or the
+waiting folder for a specific context or list items for a given project. If no
+context or project is named, all contexts are listed."""
             }
         }
     }
@@ -571,7 +570,7 @@ folder for a specific context."""
         // parent path.
         return true }
 
-    protected String getRelativePath(File parent, File child) {
+    protected static String getRelativePath(File parent, File child) {
         def parentPath = parent.canonicalPath.split("/")
         def childPath = child.canonicalPath.split("/")
 
