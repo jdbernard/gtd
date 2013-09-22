@@ -1,4 +1,4 @@
-package com.jdblabs.gtd.cli
+package com.jdblabs.gtd
 
 import org.joda.time.DateMidnight
 import org.joda.time.DateTime

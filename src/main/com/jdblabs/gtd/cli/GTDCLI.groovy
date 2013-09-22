@@ -1,5 +1,7 @@
 package com.jdblabs.gtd.cli
 
+import com.jdblabs.gtd.Item
+import com.jdblabs.gtd.PropertyHelp
 import com.jdbernard.util.LightOptionParser
 import com.martiansoftware.nailgun.NGContext
 import java.security.MessageDigest
@@ -8,13 +10,14 @@ import org.joda.time.DateTime
 //import org.slf4j.Logger
 //import org.slf4j.LoggerFactory
 
+import static com.jdblabs.gtd.Util.*
+
 public class GTDCLI {
 
-    public static final String VERSION = "1.1"
+    public static final String VERSION = "1.2"
     private static String EOL = System.getProperty("line.separator")
     private static GTDCLI nailgunInst
 
-    private MessageDigest md5 = MessageDigest.getInstance("MD5")
     private int terminalWidth
     private Scanner stdin
     private File workingDir
@@ -249,8 +252,6 @@ public class GTDCLI {
         if (selectedFile.isAbsolute()) item = new Item(selectedFile)
         else item = new Item(new File(workingDir, selectedFilePath))
 
-        def itemMd5 = md5.digest(item.file.bytes)
-
         // Move to the done folder.
         def oldFile = item.file
         def date = new DateMidnight().toString("YYYY-MM-dd")
@@ -289,6 +290,8 @@ public class GTDCLI {
     
     protected void calendar(LinkedList args) {
         def itemsOnCalendar = []
+
+        MessageDigest md5 = MessageDigest.getInstance("MD5")
 
         def addCalendarItems = { file ->
             if (!file.isFile()) return
@@ -540,66 +543,6 @@ context or project is named, all contexts are listed."""
         }
     }
 
-    protected List<File> findAllCopies(File original, File inDir) {
-        def copies = []
-        def originalMD5 = md5.digest(original.bytes)
-
-        inDir.eachFileRecurse { file -> 
-            if (file.isFile() && md5.digest(file.bytes) == originalMD5)
-                copies << file }
-        
-        return copies }
-
-    protected boolean inPath(File parent, File child) {
-        def parentPath = parent.canonicalPath.split("/")
-        def childPath = child.canonicalPath.split("/")
-
-        // If the parent path is longer than the child path it cannot contain
-        // the child path.
-        if (parentPath.length > childPath.length) return false;
-
-        // If the parent and child paths do not match at any point, the parent
-        // path does not contain the child path.
-        for (int i = 0; i < parentPath.length; i++)
-            if (childPath[i] != parentPath[i])
-                return false;
-
-        // The parent path is at least as long as the child path, and the child
-        // path matches the parent path (up until the end of the parent path).
-        // The child path either is the parent path or is contained by the
-        // parent path.
-        return true }
-
-    protected static String getRelativePath(File parent, File child) {
-        def parentPath = parent.canonicalPath.split("/")
-        def childPath = child.canonicalPath.split("/")
-
-        if (parentPath.length > childPath.length) return ""
-
-        int b = 0
-        while (b < parentPath.length && parentPath[b] == childPath[b] ) b++;
-
-        if (b != parentPath.length) return ""
-        return (['.'] + childPath[b..<childPath.length]).join('/') }
-
-    protected Map findGtdRootDir(File givenDir) {
-
-        def gtdDirs = [:]
-
-        File currentDir = givenDir
-        while (currentDir != null) {
-            gtdDirs = ["in", "incubate", "done", "next-actions", "projects",
-                       "tickler", "waiting"].
-                collectEntries { [it, new File(currentDir, it)] }
-
-            if (gtdDirs.values().every { dir -> dir.exists() && dir.isDirectory() }) {
-                gtdDirs.root = currentDir
-                return gtdDirs }
-
-            currentDir = currentDir.parentFile }
-
-        return [:] }
-
     protected String prompt(def msg) {
         if (msg instanceof List) msg = msg.join(EOL)
         msg += "> "
@@ -610,13 +553,12 @@ context or project is named, all contexts are listed."""
         
         return line }
 
-    static String filenameToString(File f) {
+    public static String filenameToString(File f) {
         return f.name.replaceAll(/[-_]/, " ").capitalize() }
 
-    static String stringToFilename(String s) {
+    public static String stringToFilename(String s) {
         return s.replaceAll(/\s/, '-').
                 replaceAll(/[';:(\.$)]/, '').
                 toLowerCase() }
-
 }
 

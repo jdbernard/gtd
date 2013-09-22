@@ -1,4 +1,4 @@
-package com.jdblabs.gtd.cli
+package com.jdblabs.gtd
 
 public class Item {
     

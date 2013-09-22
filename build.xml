@@ -40,4 +40,31 @@
 
         <exec executable="ng-start" os="Linux"/>
     </target>
+
+    <target name="servlet" depends="compile,increment-build-number">
+        <mkdir dir="${build.dir}/servlet/WEB-INF/classes"/>
+        <mkdir dir="${build.dir}/servlet/WEB-INF/lib"/>
+        <mkdir dir="${build.dir}/servlet/META-INF"/>
+
+        <copy todir="${build.dir}/servlet/WEB-INF/classes">
+            <fileset dir="${build.dir}/main/classes"/>
+        </copy>
+        <copy todir="${build.dir}/servlet/WEB-INF/lib">
+            <fileset dir="${build.dir}/lib/runtime/jar"/>
+        </copy>
+        <copy todir="${build.dir}/servlet/WEB-INF">
+            <fileset dir="${resources.dir}/WEB-INF"/>
+        </copy>
+        <copy todir="${build.dir}/servlet/META-INF">
+            <fileset dir="${resources.dir}/META-INF"/>
+        </copy>
+
+        <!--<jar
+            destfile="${build.dir}/${name}-servlet-${version}.${build.number}.war"
+            basedir="${build.dir}/servlet"/> -->
+
+        <jar destfile="${build.dir}/gtd.war" basedir="${build.dir}/servlet"/>
+
+    </target>
+
 </project>
