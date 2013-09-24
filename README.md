@@ -37,16 +37,16 @@ application.
 
 ### com.jdblabs.gtd
 
-[Item](http://jdbernard.github.io/gtd/doc/com/jdblabs/gtd/Item.groovy.html)
+[Item](http://jdbernard.github.io/gtd/doc/src/main/com/jdblabs/gtd/Item.groovy.html)
 :   One item in the GTD system (a *next action* for example). This class is a
     wrapper around the File to make it easier to work programatically with GTD
     items.
 
-[PropertyHelp](http://jdbernard.github.io/gtd/doc/com/jdblabs/gtd/PropertyHelp.groovy.html)
+[PropertyHelp](http://jdbernard.github.io/gtd/doc/src/main/com/jdblabs/gtd/PropertyHelp.groovy.html)
 :   Simple serialization support for item properties. Used to read and write
     properties from an item file. 
 
-[Util](http://jdbernard.github.io/gtd/doc/com/jdblabs/gtd/Util.groovy.html)
+[Util](http://jdbernard.github.io/gtd/doc/src/main/com/jdblabs/gtd/Util.groovy.html)
 :   Utility methods common to this implementation of the Getting Things Done
     method.
 
@@ -65,5 +65,5 @@ application.
 :   Standard Java servlet to expose the repository via 
 
 [book]: https://secure.davidco.com/store/catalog/GETTING-THINGS-DONE-PAPERBACK-p-16175.php
-[cli]: http://jdbernard.github.io/gtd/doc/com/jdblabs/gtd/cli/GTDCLI.groovy.html
-[servlet]: http://jdbernard.github.io/gtd/doc/com/jdblabs/gtd/servlet/GTDServlet.groovy.html
+[cli]: http://jdbernard.github.io/gtd/doc/src/main/com/jdblabs/gtd/cli/GTDCLI.groovy.html
+[servlet]: http://jdbernard.github.io/gtd/doc/src/main/com/jdblabs/gtd/servlet/GTDServlet.groovy.html
