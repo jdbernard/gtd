@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>GTDCLI.groovy</title>
+        <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+        <link type="text/css" rel="stylesheet" media="all"
+            href="../../../../../../.css/jlp.css"></link>
+
+        <!-- syntax highlighting plugin -->
+        <link type="text/css" rel="stylesheet" media="all"
+            href="../../../../../../.sh/styles/shCoreDefault.css"></link>
+        <script type="text/javascript"
+            src="../../../../../../.sh/scripts/XRegExp.js"></script>
+        <script type="text/javascript"
+            src="../../../../../../.sh/scripts/shCore.js"></script>
+
+        <script type="text/javascript"
+            src="../../../../../../.sh/scripts/shBrushGroovy.js"></script>
+        <script type="text/javascript">
+            SyntaxHighlighter.defaults.light = true;
+            SyntaxHighlighter.defaults.unindent = false;
+            SyntaxHighlighter.all();
+        </script>
+    </head>
+    <body>
+        <div id="container">
+            <table cellpadding="0" cellspacing="0">
+                <tbody><tr>
+<td class="docs"><h1>GTDCLI</h1>
+<dl><dt>Author</dt><dd>Jonathan Bernard (jdb@jdb-labs.com)</dd>
+</dl><p>&copy; 2013 <a href="http://jdb-labs.com">JDB Labs LLC</a></p></td>
+<td class="code"><pre class="brush: groovy;">
+package com.jdblabs.gtd.cli
+
+import com.jdblabs.gtd.Item
+import com.jdblabs.gtd.PropertyHelp
+import com.jdbernard.util.LightOptionParser
+import com.martiansoftware.nailgun.NGContext
+import java.security.MessageDigest
+import org.joda.time.DateMidnight
+import org.joda.time.DateTime
+//import org.slf4j.Logger
+//import org.slf4j.LoggerFactory
+
+import static com.jdblabs.gtd.Util.*
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/cli/GTDCLI'>
+<td class="docs"><p>Command-line helper for working with this implementation of the Getting Things Done method.</p></td>
+<td class="code"><pre class="brush: groovy;">
+public class GTDCLI {
+
+    public static final String VERSION = &quot;1.2&quot;
+    private static String EOL = System.getProperty(&quot;line.separator&quot;)
+
+</pre></td></tr><tr>
+<td class="docs"><p>We have a persistent instance when we are in the context of a Nailgun setup.</p></td>
+<td class="code"><pre class="brush: groovy;">    private static GTDCLI nailgunInst
+
+</pre></td></tr><tr>
+<td class="docs"><p>Used to wrap lines intelligently.</p></td>
+<td class="code"><pre class="brush: groovy;">    private int terminalWidth
+
+    private Scanner stdin
+    private File workingDir
+
+</pre></td></tr><tr>
+<td class="docs"><p>The <a href="../Util.groovy.html#gtd.jdb-labs.com/notes/root-directory-map">GTD Root Directory map</a> for our repository.</p></td>
+<td class="code"><pre class="brush: groovy;">    private Map&lt;String, File&gt; gtdDirs
+
+    //private Logger log = LoggerFactory.getLogger(getClass())
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>main</code></h3><p>Main entry point for a normal GTD CLI process. </p></td>
+<td class="code"><pre class="brush: groovy;">
+    public static void main(String[] args) {
+</pre></td></tr><tr>
+<td class="docs"><p>Instantiate our GTDCLI instance using the configuration file at <code>$HOME/.gtdclirc</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">        GTDCLI inst = new GTDCLI(new File(System.getProperty(&quot;user.home&quot;),
+            &quot;.gtdclirc&quot;))
+
+</pre></td></tr><tr>
+<td class="docs"><p>Actual processing is done by the <a href="#gtd.jdb-labs.com/cli/GTDCLI/run"><code>run</code></a> method</p></td>
+<td class="code"><pre class="brush: groovy;">        if (args.length &gt; 0) args[-1] = args[-1].trim()
+        inst.run(args) }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>nailMain</code></h3><p>Entry point for a GTD CLI process under [Nailgun][ng]. [ng]: http://www.martiansoftware.com/nailgun/ </p></td>
+<td class="code"><pre class="brush: groovy;">
+    public static void nailMain(NGContext context) {
+        if (nailgunInst == null)
+            nailgunInst = new GTDCLI(new File(
+                System.getProperty(&quot;user.home&quot;), &quot;.gtdclirc&quot;))
+        else nailgunInst.stdin = new Scanner(context.in)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Trim the last argument; not all cli's are well-behaved</p></td>
+<td class="code"><pre class="brush: groovy;">        if (context.args.length &gt; 0) context.args[-1] = context.args[-1].trim()
+
+        nailgunInst.run(context.args) }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>reconfigure</code></h3><p>This method reloads the configuration before invoking the run function, allowing a long-lived instance to react to configuration changes. </p></td>
+<td class="code"><pre class="brush: groovy;">
+    public static void reconfigure(String[] args) {
+</pre></td></tr><tr>
+<td class="docs"><p>If we do not have a long-running Nailgun instance we just call main.</p></td>
+<td class="code"><pre class="brush: groovy;">        if (nailgunInst == null) main(args)
+        else {
+</pre></td></tr><tr>
+<td class="docs"><p>Discard our old instance and instantiate a new one in order to read afresh the configuration file.</p></td>
+<td class="code"><pre class="brush: groovy;">            nailgunInst = null
+            nailgunInst = new GTDCLI(new File(
+                System.getProperty(&quot;user.home&quot;), &quot;.gritterrc&quot;))
+
+            nailgunInst.run(args) } }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>constructor</code></h3><p>Create a new GTDCLI instance, using the given configuration file. </p></td>
+<td class="code"><pre class="brush: groovy;">
+    public GTDCLI(File configFile) {
+
+</pre></td></tr><tr>
+<td class="docs"><p>Parse the groovy config file</p></td>
+<td class="code"><pre class="brush: groovy;">        def config = [:]
+        if (configFile.exists())
+            config = new ConfigSlurper().parse(configFile.toURL())
+
+</pre></td></tr><tr>
+<td class="docs"><p>Configure the terminal width</p></td>
+<td class="code"><pre class="brush: groovy;">        terminalWidth = (System.getenv().COLUMNS ?: config.terminalWidth ?: 79) as int
+
+</pre></td></tr><tr>
+<td class="docs"><p>Configure our default working directory.</p></td>
+<td class="code"><pre class="brush: groovy;">        workingDir = config.defaultDirectory ?
+            new File(config.defaultDirectory) : 
+            new File('.')
+        
+        stdin = new Scanner(System.in) }
+    </pre></td></tr>
+<tr id='gtd.jdb-labs.com/cli/GTDCLI/run'>
+<td class="docs"><h3><code>run</code></h3><p>This method does the work of processing the user input and taking the appropriate action.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void run(String[] args) {
+        
+</pre></td></tr><tr>
+<td class="docs"><p>Simple CLI options:</p></td>
+<td class="code"><pre class="brush: groovy;">        def cliDefinition = [
+</pre></td></tr><tr>
+<td class="docs"><dl><dt>-h, --help</dt><dd>Show the usage information.</dd>
+</dl></td>
+<td class="code"><pre class="brush: groovy;">            h: [longName: 'help'],
+</pre></td></tr><tr>
+<td class="docs"><dl><dt>-d, --directory</dt><dd>Set the working directory for the CLI.</dd>
+</dl></td>
+<td class="code"><pre class="brush: groovy;">            d: [longName: 'directory', arguments: 1],
+</pre></td></tr><tr>
+<td class="docs"><dl><dt>-v, --version</dt><dd>Print version information.</dd>
+</dl></td>
+<td class="code"><pre class="brush: groovy;">            v: [longName: 'version']]
+
+        def opts = LightOptionParser.parseOptions(cliDefinition, args as List)
+
+        if (opts.h) { printUsage(null); return }
+        if (opts.v) { println &quot;GTD CLI v$VERSION&quot;; return }
+        if (opts.d) workingDir = new File(opts.d)
+
+</pre></td></tr><tr>
+<td class="docs"><p>View the arguments as a <a href="http://docs.oracle.com/javase/6/docs/api/java/util/LinkedList.html"><code>LinkedList</code></a> so we can use <a href="http://docs.oracle.com/javase/6/docs/api/java/util/LinkedList.html#peek()"><code>peek</code></a> and <a href="http://docs.oracle.com/javase/6/docs/api/java/util/LinkedList.html#poll()"><code>poll</code></a>.</p></td>
+<td class="code"><pre class="brush: groovy;">        def parsedArgs = (opts.args as List) as LinkedList
+
+        if (parsedArgs.size() &lt; 1) printUsage()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Make sure we are in a GTD directory.</p></td>
+<td class="code"><pre class="brush: groovy;">        gtdDirs = findGtdRootDir(workingDir)
+        if (!gtdDirs) {
+            println &quot;fatal: '${workingDir.canonicalPath}'&quot;
+            println &quot;       is not a GTD repository (or any of the parent directories).&quot;
+            return }
+
+        while (parsedArgs.peek()) {
+</pre></td></tr><tr>
+<td class="docs"><p>Pull off the first argument.</p></td>
+<td class="code"><pre class="brush: groovy;">            def command = parsedArgs.poll()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Match the first argument and invoke the proper command method.</p></td>
+<td class="code"><pre class="brush: groovy;">            switch (command.toLowerCase()) {
+                case ~/help/: printUsage(parsedArgs); break
+                case ~/done/: done(parsedArgs); break
+                case ~/cal|calendar/: calendar(parsedArgs); break
+                case ~/process/: process(parsedArgs); break
+                case ~/list-copies/: listCopies(parsedArgs); break
+                case ~/new/: newAction(parsedArgs); break
+                case ~/tickler/: tickler(parsedArgs); break
+                case ~/ls|list/: ls(parsedArgs); break;
+                default: 
+                    println &quot;Unrecognized command: ${command}&quot;
+                    break } } }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>process</code></h3><p>Implement the <em>process</em> step of the GTD method. For details, see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/process">online help</a> included by running <code>gtd help process</code></p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void process(LinkedList args) {
+
+        def path = args.poll()
+        if (path) {
+            def givenDir = new File(path)
+            if (!(gtdDirs = findGtdRootDir(givenDir))) {
+                println &quot;'$path' is not a valid directory.&quot;; return }}
+
+</pre></td></tr><tr>
+<td class="docs"><p>Start processing items</p></td>
+<td class="code"><pre class="brush: groovy;">        gtdDirs.in.listFiles().collect { new Item(it) }.each { item -&gt;
+
+            println &quot;&quot;
+            def response
+            def readline = {stdin.nextLine().trim()}
+
+</pre></td></tr><tr>
+<td class="docs"><ol>
+  <li>Is it actionable?</li>
+</ol></td>
+<td class="code"><pre class="brush: groovy;">            if (!item.title) item.title = filenameToString(item.file)
+            response = prompt([&quot;&gt;&gt; $item&quot;, &quot;Is it actionable?&quot;]).toLowerCase()
+            
+</pre></td></tr><tr>
+<td class="docs"><p>Not actionable, should we incubate this or trash it?</p></td>
+<td class="code"><pre class="brush: groovy;">            if (!(response ==~ /yes|y/)) {
+                response = prompt(&quot;Incubate or trash?&quot;).toLowerCase()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Trash</p></td>
+<td class="code"><pre class="brush: groovy;">                if (&quot;trash&quot; =~ response) item.file.delete()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Incubate</p></td>
+<td class="code"><pre class="brush: groovy;">                else {
+                    println &quot;Enter extra info. One 'key: value' pair per line.&quot;
+                    println &quot;(ex: date: YYYY-MM-DD, details)&quot;
+                    println &quot;End with an empty line.&quot;
+                    print &quot;&gt; &quot;
+                    while (response = readline()) {
+                        if (!response =~ /[:=]/) continue
+                        def parts = response.split(/[:=]/)
+                        item[parts[0].trim().toLowerCase()] =
+                            PropertyHelp.parse(parts[1].trim())
+                        print &quot;&gt; &quot; }
+
+                    def oldFile = item.file
+                    item.file = new File(gtdDirs.incubate, item.file.name)
+                    item.save()
+                    oldFile.delete() }
+
+</pre></td></tr><tr>
+<td class="docs"><p>It is actionable. Can we do it now in less than 2 minutes?</p></td>
+<td class="code"><pre class="brush: groovy;">            } else {
+                response = prompt(&quot;Will it take less than 2 minutes?&quot;).toLowerCase()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Yes, so do it now.</p></td>
+<td class="code"><pre class="brush: groovy;">                if (response ==~ /yes|y/) {
+                    println &quot;Do it now.&quot;; print &quot;&gt; &quot;
+                    readline();
+
+                    def date = new DateMidnight().toString(&quot;YYYY-MM-dd&quot;)
+                    def oldFile = item.file
+                    item.file = new File(gtdDirs.done, &quot;$date-${item.file.name}&quot;)
+                    item.save()
+                    oldFile.delete()
+                    return }
+
+</pre></td></tr><tr>
+<td class="docs"><p>It will take more than 2 minutes. Track it in our system.</p></td>
+<td class="code"><pre class="brush: groovy;">                item.outcome = prompt(&quot;What is the desired outcome?&quot;)
+
+                println &quot;Enter extra info. One 'key: value' pair per line.&quot;
+                println &quot;(ex: date: YYYY-MM-DD, details)&quot;
+                println &quot;End with an empty line.&quot;
+                print &quot;&gt; &quot;
+
+                while (response = readline()) {
+                    if (!(response =~ /[:=]/)) continue
+                    def parts = response.split(/[:=]/)
+                    item[parts[0].trim().toLowerCase()] =
+                        PropertyHelp.parse(parts[1].trim())
+                    print &quot;&gt; &quot; }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Does this need to be a separate project?</p></td>
+<td class="code"><pre class="brush: groovy;">                response = prompt(&quot;Too big for one action?&quot;).toLowerCase()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Yes, this deserves it's own project folder.</p></td>
+<td class="code"><pre class="brush: groovy;">                if (response ==~ /yes|y/) {
+                    def oldFile = item.file
+                    item.file = new File(gtdDirs.projects,
+                                         stringToFilename(item.outcome))
+                    item.save()
+                    oldFile.delete()
+                    println &quot;Moved to projects.&quot; }
+
+</pre></td></tr><tr>
+<td class="docs"><p>No, we can track this in one item. Is this something we need someone else to do, should we defer it to our next-actions list, or should we forget about it until a future date?</p></td>
+<td class="code"><pre class="brush: groovy;">                else {
+                    response = prompt(&quot;Delegate, defer, or tickler?&quot;).
+                        toLowerCase()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Delegate, move to the <em>waiting</em> folder.</p></td>
+<td class="code"><pre class="brush: groovy;">                    if (response =~ /del/) {
+
+                        item.action = prompt([
+                            &quot;Next action (who needs to do what).&quot;, &quot;&quot;])
+
+                        def oldFile = item.file
+                        item.file = new File(gtdDirs.waiting,
+                                             stringToFilename(item.action))
+                        item.save()
+                        oldFile.delete()
+
+                        println &quot;Moved to ${gtdDirs.waiting.name} folder.&quot; }
+
+
+</pre></td></tr><tr>
+<td class="docs"><p>Defer, move to teh <em>next-actions</em> folder.</p></td>
+<td class="code"><pre class="brush: groovy;">                    else if (response =~ /def/) {
+                        item.action = prompt([&quot;Next action.&quot;, &quot;&quot;])
+
+                        def oldFile = item.file
+                        item.file = new File(gtdDirs[&quot;next-actions&quot;],
+                                             stringToFilename(item.action))
+                        item.save()
+                        oldFile.delete()
+
+                        println &quot;Moved to the ${gtdDirs['next-actions'].name} folder.&quot;
+                    }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Forget for now, move it to the <em>tickler</em> folder.</p></td>
+<td class="code"><pre class="brush: groovy;">                    else {
+                        item.action = prompt([&quot;Next action.&quot;, &quot;&quot;])
+                        item.tickle = prompt([
+                            &quot;When do you want it to become active?&quot;,
+                            &quot;(YYYY-MM-DD)&quot;])
+
+                        def oldFile = item.file
+                        item.file = new File(gtdDirs.tickler,
+                                             stringToFilename(item.action))
+                        item.save()
+                        oldFile.delete()
+                        println &quot;Moved to the ${gtdDirs.tickler.name} folder.&quot; } } } } }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>done</code></h3><p>Implement the <code>done</code> command to mark items as completed. For detailed information see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/done">online help</a> by running <code>gtd help done</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void done(LinkedList args) {
+
+        def selectedFilePath = args.poll()
+        def selectedFile = new File(selectedFilePath)
+
+        if (!selectedFile) {
+            println &quot;gtd done command requires a &lt;action-file&gt; parameter.&quot;
+            return }
+
+        def item
+        if (selectedFile.isAbsolute()) item = new Item(selectedFile)
+        else item = new Item(new File(workingDir, selectedFilePath))
+
+</pre></td></tr><tr>
+<td class="docs"><p>Move to the done folder.</p></td>
+<td class="code"><pre class="brush: groovy;">        def oldFile = item.file
+        def date = new DateMidnight().toString(&quot;YYYY-MM-dd&quot;)
+        item.file = new File(gtdDirs.done, &quot;$date-${item.file.name}&quot;)
+        item.save()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Check if this item was in a project folder.</p></td>
+<td class="code"><pre class="brush: groovy;">        if (inPath(gtdDirs.projects, oldFile)) {
+
+</pre></td></tr><tr>
+<td class="docs"><p>Delete any copies of this item from the next actions folder.</p></td>
+<td class="code"><pre class="brush: groovy;">            findAllCopies(oldFile, gtdDirs.&quot;next-actions&quot;).each { file -&gt;
+                println &quot;Deleting duplicate entry from the &quot; +
+                        &quot;${file.parentFile.name} context.&quot;
+                file.delete() }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Delete any copies of this item from the waiting folder.</p></td>
+<td class="code"><pre class="brush: groovy;">            findAllCopies(oldFile, gtdDirs.waiting).each { file -&gt;
+                println &quot;Deleting duplicate entry from the &quot; +
+                    &quot;${file.parentFile.name} waiting context.&quot;
+                file.delete() }}
+
+</pre></td></tr><tr>
+<td class="docs"><p>Check if this item was in the next-action or waiting folder.</p></td>
+<td class="code"><pre class="brush: groovy;">        if (inPath(gtdDirs[&quot;next-actions&quot;], oldFile) ||
+            inPath(gtdDirs.waiting, oldFile)) {
+
+</pre></td></tr><tr>
+<td class="docs"><p>Delete any copies of this item from the projects folder.</p></td>
+<td class="code"><pre class="brush: groovy;">            findAllCopies(oldFile, gtdDirs.projects).each { file -&gt;
+                println &quot;Deleting duplicate entry from the &quot; +
+                    &quot;${file.parentFile.name} project.&quot;
+                file.delete() }}
+
+</pre></td></tr><tr>
+<td class="docs"><p>Delete the original</p></td>
+<td class="code"><pre class="brush: groovy;">        oldFile.delete()
+
+        println &quot;'$item' marked as done.&quot; }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>calendar</code></h3><p>Implement the <code>calendar</code> command to show all the items which are scheduled on the calendar. For detailed information see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/calendar">online help</a> by running <code>gtd help calendar</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void calendar(LinkedList args) {
+        def itemsOnCalendar = []
+
+        MessageDigest md5 = MessageDigest.getInstance(&quot;MD5&quot;)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Temporary helper function to add GTD item files that have the <code>date</code> property defined.</p></td>
+<td class="code"><pre class="brush: groovy;">        def addCalendarItems = { file -&gt;
+            if (!file.isFile()) return
+            def item = new Item(file)
+            if (item.date) itemsOnCalendar &lt;&lt; item }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Look through each of the <code>next-actions</code>, <code>waiting</code>, and <code>projects</code> folders for items which should be on the calendar</p></td>
+<td class="code"><pre class="brush: groovy;">        gtdDirs.&quot;next-actions&quot;.eachFileRecurse(addCalendarItems)
+        gtdDirs.waiting.eachFileRecurse(addCalendarItems)
+        gtdDirs.projects.eachFileRecurse(addCalendarItems)
+
+</pre></td></tr><tr>
+<td class="docs"><p>De-duplicate the list.</p></td>
+<td class="code"><pre class="brush: groovy;">        itemsOnCalendar = itemsOnCalendar.unique { md5.digest(it.file.bytes) }.
+                                          sort { it.date }
+
+        if (!itemsOnCalendar) println &quot;No items on the calendar.&quot;
+
+        def currentDate = null
+            
+</pre></td></tr><tr>
+<td class="docs"><p>Print each day of items.</p></td>
+<td class="code"><pre class="brush: groovy;">        itemsOnCalendar.each { item -&gt;
+            def itemDay = new DateMidnight(item.date)
+            if (itemDay != currentDate) {
+                if (currentDate != null) println &quot;&quot;
+                println itemDay.toString(&quot;EEE, MM/dd&quot;)
+                println &quot;----------&quot;
+                currentDate = itemDay }
+
+            println &quot;  $item&quot; } }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>listCopies</code></h3><p>Implement the <code>list-copies</code> command to show all the copies of a given item in the repository. For detailed information see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/list-copies">online help</a> by running <code>gtd help list-copies</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void listCopies(LinkedList args) {
+
+        args.each { filePath -&gt;
+</pre></td></tr><tr>
+<td class="docs"><p>First find the file they have named.</p></td>
+<td class="code"><pre class="brush: groovy;">            def file = new File(filePath)
+
+            if (!file.isAbsolute()) file = new File(workingDir, filePath)
+
+            if (!file.isFile()) {
+                println &quot;${file.canonicalPath} is not a regular file.&quot;
+                return }
+
+            String originalRelativePath = getRelativePath(gtdDirs.root, file)
+            println &quot;Copies of $originalRelativePath:&quot;
+            println &quot;&quot;
+
+</pre></td></tr><tr>
+<td class="docs"><p>Find all copies using [<code>Util.findAllCopies</code>][1] and print their relative paths. [1]: jlp://gtd.jdb-labs.com/Util/findAllCopies</p></td>
+<td class="code"><pre class="brush: groovy;">            findAllCopies(file, gtdDirs.root).each { copy -&gt;
+                if (copy.canonicalPath != file.canonicalPath) {
+                    String relativePath = getRelativePath(gtdDirs.root, copy)
+                    println &quot;  $relativePath&quot; }} }
+
+        args.clear() }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>new</code></h3><p>Implement the <code>new</code> command to create a new GTD item in the current directory. For detailed information see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/new">online help</a> by running <code>gtd help new</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void newAction(LinkedList args) {
+
+</pre></td></tr><tr>
+<td class="docs"><p>Get the next action.</p></td>
+<td class="code"><pre class="brush: groovy;">        def response = prompt([&quot;Next action?&quot;, &quot;&quot;])
+        def file = new File(workingDir, stringToFilename(response))
+        file.createNewFile()
+        def item = new Item(file)
+        
+        item.action = response
+
+        println &quot;Enter extra info. One 'key: value' pair per line.&quot;
+        println &quot;(ex: date: YYYY-MM-DD, project=my-project)&quot;
+        println &quot;End with an empty line.&quot;
+        print &quot;&gt; &quot;
+
+</pre></td></tr><tr>
+<td class="docs"><p>Read in item properties.</p></td>
+<td class="code"><pre class="brush: groovy;">        while (response = stdin.nextLine().trim()) {
+</pre></td></tr><tr>
+<td class="docs"><p>Skip lines that do not contain either <code>:</code> or <code>=</code> (the key-value delimiters).</p></td>
+<td class="code"><pre class="brush: groovy;">            if (!(response =~ /[:=]/)) continue
+
+</pre></td></tr><tr>
+<td class="docs"><p>Split the line into key and value and add this property to the item.</p></td>
+<td class="code"><pre class="brush: groovy;">            def parts = response.split(/[:=]/)
+            item[parts[0].trim().toLowerCase()] =
+                PropertyHelp.parse(parts[1].trim())
+            print &quot;&gt; &quot; }
+
+        item.save() }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>tickler</code></h3><p>Implement the <code>tickler</code> command to move items in the <em>tickler</em> folder to the <em>next-actions</em> folder if their time has come. For detailed information see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/tickler">online help</a> by running <code>gtd help tickler</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void tickler(LinkedList args) {
+
+        gtdDirs.tickler.eachFileRecurse { file -&gt;
+            def item = new Item(file)
+            def today = new DateMidnight()
+
+</pre></td></tr><tr>
+<td class="docs"><p>If the item is scheduled to be tickled today (or in the past) then move it into the next-actions folder</p></td>
+<td class="code"><pre class="brush: groovy;">            if ((item.tickle as DateMidnight) &lt;= today) {
+                println &quot;Moving '${item.action}' out of the tickler.&quot;
+                def oldFile = item.file
+                item.file = new File(gtdDirs.&quot;next-actions&quot;,
+                                     stringToFilename(item.action))
+                item.gtdProperties.remove(&quot;tickle&quot;)
+                item.save()
+                oldFile.delete() }}}
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>ls</code></h3><p>Implement the <code>ls</code> command to pretty print all items in a context folder, a project folder, or the <em>next-action</em> folder. For detailed information see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/ls">online help</a> by running <code>gtd help ls</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void ls(LinkedList args) {
+
+        def target = args.poll()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Temporary helper function to print all the items in a given directory.</p></td>
+<td class="code"><pre class="brush: groovy;">        def printItems = { dir -&gt;
+            if (!dir.exists() || !dir.isDirectory()) return
+            println &quot;-- ${getRelativePath(gtdDirs.root, dir)} --&quot;
+            dir.eachFile { file -&gt;
+                if (!file.exists() || !file.isFile() || file.isHidden())
+                    return
+
+                def item = new Item(file)
+                println item.action }
+
+            println &quot;&quot; }
+
+</pre></td></tr><tr>
+<td class="docs"><p>If we have a named context or project, look for those items specifically</p></td>
+<td class="code"><pre class="brush: groovy;">        if (target) {
+
+            printItems(new File(gtdDirs['next-actions'], target))
+            printItems(new File(gtdDirs.waiting, target))
+            printItems(new File(gtdDirs.projects, target)) }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Otherwise print all items in the <em>next-actions</em> and <em>waiting</em> folders and all their subfolders.</p></td>
+<td class="code"><pre class="brush: groovy;">        else {
+            printItems(gtdDirs['next-actions'])
+            printItems(gtdDirs['waiting'])
+            gtdDirs['next-actions'].eachDir(printItems)
+            gtdDirs['waiting'].eachDir(printItems) } }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>help</code></h3><p>Implement the <code>help</code> command which provides the online-help. Users can access the online help for a command by running <code>gtd help &lt;command&gt;</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void printUsage(LinkedList args) {
+
+        if (!args) {
+            println &quot;&quot;&quot;\
+Jonathan Bernard's Getting Things Done CLI v$VERSION
+usage: gtd [option...] &lt;command&gt;...
+
+options are:
+
+   -h, --help                  Print this usage information.
+   -d, --directory             Set the GTD root directory.
+   -v, --version               Print the GTD CLI version.
+                              
+top-level commands:           
+                              
+   help &lt;command&gt;              Print detailed help about a command.
+   process                     Process inbox items systematically.
+   done &lt;action-file&gt;          Mark an action as done. This will automatically
+                               take care of duplicates of the action in project 
+                               or next-actions sub-folders.
+   calendar                    Show the tasks with specific days assigned to
+                               them, sorted by date.
+   list-copies &lt;action-file&gt;   Given an action item, list all the other places
+                               there the same item is filed (cross-reference
+                               with a project folder, for example).
+   new                         Interactively create a new action item in the
+                               current folder.
+   tickler                     Search the tickler file for items that need to be
+                               delivered and move them to the *next-actions*
+                               folder.&quot;&quot;&quot;
+        } else {
+            def command = args.poll()
+
+            switch(command.toLowerCase()) {
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/cli/GTDCLI/help/process'>
+<td class="docs"><p>Online help for the <code>process</code> command.</p></td>
+<td class="code"><pre class="brush: groovy;">                case ~/process/: println &quot;&quot;&quot;\
+usage: gtd process
+
+This is an interactive command.
+
+GTD CLI goes through all the items in the &quot;in&quot; folder for this GTD repository
+and guides you through the *process* step of the GTD method as follows:
+
+                Is the item actionable?
+                           V
+                           +---------------------------&gt; No
+                           |                           /   \\
+                          Yes                 Incubate       Trash
+                           |              (Someday/Maybe)
+                           V
+         Yes &lt;--Too big for one action? --&gt; No
+          |                                 |
+          V                                 |
+  Move to projects                          V
+(still needs organization)        What is the next action?
+                                          / 
+                                         / 
+                          Defer, delegate, or tickler?
+                          /         |              \\
+                         /     Move to the       Set a date for this
+              Move to the        waiting       to become active again.
+              next-actions      directory        Move to the tickler
+              directory                              directory.&quot;&quot;&quot;
+                    break
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/cli/GTDCLI/help/done'>
+<td class="docs"><p>Online help for the <code>done</code> command.</p></td>
+<td class="code"><pre class="brush: groovy;">                case ~/done/: println &quot;&quot;&quot;\
+usage: gtd done &lt;action-file&gt;
+
+Where &lt;action-file&gt; is expected to be the path (absolute or relative) to an
+action item file. The action item file is expected to be in the *projects*
+folder, the *next-actions* folder, the *waiting* folder, or a subfolder of one of
+the aforementioned folders. The item is prepended with the current date and
+moved to the *done* folder. If the item was in a project folder, the
+*next-actions* and *waiting* folders are scanned recursively for duplicates of
+the item, which are removed if found. Similarly, if the action was in a
+*next-actions* or *waiting* folder the *projects* folder is scanned recursively
+for duplicates.
+
+The intention of the duplicate removal is to allow you to copy actions from
+project folders into next action or waiting contexts, so you can keep a view of
+the item organized by the project or in your next actions list. The GTD CLI tool
+is smart enough to recognize that these are the same items filed in more than
+one place and deal with them all in one fell swoop. Duplicates are determined by
+exact file contents (MD5 hash of the file contents).&quot;&quot;&quot;
+                    break
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/cli/GTDCLI/help/calendar'>
+<td class="docs"><p>Online help for the <code>calendar</code> command.</p></td>
+<td class="code"><pre class="brush: groovy;">                case ~/calendar/: println &quot;&quot;&quot;\
+usage: gtd calendar
+
+Print an agenda of all the actions that are on the calendar, sorted by date.
+This prints a date heading first, then all of the actions assogned to that day.
+Remember that in the GTD calendar items are supposed to be hard dates, IE.
+things that *must* be done on the assigned date.&quot;&quot;&quot;
+                    break
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/cli/GTDCLI/help/list-copies'>
+<td class="docs"><p>Online help for the <code>list-copies</code> command.</p></td>
+<td class="code"><pre class="brush: groovy;">                case ~/list-copies/: println &quot;&quot;&quot;\
+usage: gtd list-copies &lt;action-file&gt;
+
+Where &lt;action-file&gt; is expected to be the path (absolute or relative) to an
+action item file.
+
+This command searched through the current GTD repository for any items that are
+duplicates of this item.&quot;&quot;&quot;
+                    break
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/cli/GTDCLI/help/new'>
+<td class="docs"><p>Online help for the <code>new</code> command.</p></td>
+<td class="code"><pre class="brush: groovy;">                case ~/new/: println &quot;&quot;&quot;\
+usage: gtd new
+
+This command is interactive (maybe allow it to take interactive prompts in the
+future?). It prompts the user for the next action and any extended properties
+that should be associated with it, then creates the action file in the current
+directory.&quot;&quot;&quot;
+                    break
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/cli/GTDCLI/help/tickler'>
+<td class="docs"><p>Online help for the <code>tickler</code> command.</p></td>
+<td class="code"><pre class="brush: groovy;">                case ~/tickler/: println &quot;&quot;&quot;\
+usage: gtd tickler
+
+This command should be scheduled for execution once a day. It checks the tickler
+file for any items that should become active (based on their &lt;tickle&gt; property)
+and moves them out of the tickler file and into the next-actions file.&quot;&quot;&quot;
+                    break
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/cli/GTDCLI/help/ls'>
+<td class="docs"><p>Online help for the <code>ls</code>/<code>list-context</code> command.</p></td>
+<td class="code"><pre class="brush: groovy;">                case ~/ls|list-context/: println &quot;&quot;&quot;\
+usage gtd ls [&lt;context&gt; ...]
+
+This command lists all the tasks for a given context or project. The purpose is
+to list in one place items that are sitting in the next-actions folder or the
+waiting folder for a specific context or list items for a given project. If no
+context or project is named, all contexts are listed.&quot;&quot;&quot;
+            }
+        }
+    }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>prompt</code></h3><p>Prompt the user for an answer to a question. This is a helper to loop until the user has entered an actual response. </p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected String prompt(def msg) {
+        if (msg instanceof List) msg = msg.join(EOL)
+        msg += &quot;&gt; &quot;
+        print msg
+        def line
+        
+        while(!(line = stdin.nextLine().trim())) print msg 
+        
+        return line }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>filenameToString</code></h3><p>The default pretty-print conversion for filenames. </p></td>
+<td class="code"><pre class="brush: groovy;">
+    public static String filenameToString(File f) {
+        return f.name.replaceAll(/[-_]/, &quot; &quot;).capitalize() }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>stringToFilename</code></h3><p>Helper method to convert a user-entered string into something more palatable for a filename. </p></td>
+<td class="code"><pre class="brush: groovy;">
+    public static String stringToFilename(String s) {
+        return s.replaceAll(/\s/, '-').
+                replaceAll(/[';:(\.$)]/, '').
+                toLowerCase() }
+}
+
+</pre></td></tr>                </tbody>
+            </table>
+        </div>
+    </body>
+</html>

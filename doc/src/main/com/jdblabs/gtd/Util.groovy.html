@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Util.groovy</title>
+        <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+        <link type="text/css" rel="stylesheet" media="all"
+            href="../../../../../.css/jlp.css"></link>
+
+        <!-- syntax highlighting plugin -->
+        <link type="text/css" rel="stylesheet" media="all"
+            href="../../../../../.sh/styles/shCoreDefault.css"></link>
+        <script type="text/javascript"
+            src="../../../../../.sh/scripts/XRegExp.js"></script>
+        <script type="text/javascript"
+            src="../../../../../.sh/scripts/shCore.js"></script>
+
+        <script type="text/javascript"
+            src="../../../../../.sh/scripts/shBrushGroovy.js"></script>
+        <script type="text/javascript">
+            SyntaxHighlighter.defaults.light = true;
+            SyntaxHighlighter.defaults.unindent = false;
+            SyntaxHighlighter.all();
+        </script>
+    </head>
+    <body>
+        <div id="container">
+            <table cellpadding="0" cellspacing="0">
+                <tbody><tr>
+<td class="docs"><h1>Util</h1>
+<dl><dt>Author</dt><dd>Jonathan Bernard (jdb@jdb-labs.com)</dd>
+</dl><p>&copy; 2013 <a href="http://jdb-labs.com">JDB Labs LLC</a></p></td>
+<td class="code"><pre class="brush: groovy;">
+package com.jdblabs.gtd
+
+import java.security.MessageDigest
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/Util'>
+<td class="docs"><p>Utility methods common to this implementation of the Getting Things Done method. These methods provide support for working with a GTD repository which follows the organization and convention described <a href="broken_link(gtd.jdb-labs.com/notes/organization-and-structure)">here</a></p></td>
+<td class="code"><pre class="brush: groovy;">
+public class Util {
+    </pre></td></tr>
+<tr id='gtd.jdb-labs.com/Util/findAllCopies'>
+<td class="docs"><h3><code>findAllCopies</code></h3><p>Given a GTD item file, find all files in the repository which are exact copies of this file (including thie file itself). This is useful when the same item exists in a project folder and in a next-action context folder.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    public static List&lt;File&gt; findAllCopies(File original, File inDir) {
+        MessageDigest md5 = MessageDigest.getInstance(&quot;MD5&quot;)
+
+        def copies = []
+        def originalMD5 = md5.digest(original.bytes)
+
+        inDir.eachFileRecurse { file -&gt; 
+            if (file.isFile() &amp;&amp; md5.digest(file.bytes) == originalMD5)
+                copies &lt;&lt; file }
+        
+        return copies }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>inPath</code></h3><p>Determine whether or not a given path is a subpath of a given parent path. This algorithm does not consider symlinks or hard links. It operates based on the textual path names. </p></td>
+<td class="code"><pre class="brush: groovy;">
+    public static boolean inPath(File parent, File child) {
+        def parentPath = parent.canonicalPath.split(&quot;/&quot;)
+        def childPath = child.canonicalPath.split(&quot;/&quot;)
+
+</pre></td></tr><tr>
+<td class="docs"><p>If the parent path is longer than the child path it cannot contain the child path.</p></td>
+<td class="code"><pre class="brush: groovy;">        if (parentPath.length &gt; childPath.length) return false;
+
+</pre></td></tr><tr>
+<td class="docs"><p>If the parent and child paths do not match at any point, the parent path does not contain the child path.</p></td>
+<td class="code"><pre class="brush: groovy;">        for (int i = 0; i &lt; parentPath.length; i++)
+            if (childPath[i] != parentPath[i])
+                return false;
+
+</pre></td></tr><tr>
+<td class="docs"><p>The parent path is at least as long as the child path, and the child path matches the parent path (up until the end of the parent path). The child path either is the parent path or is contained by the parent path.</p></td>
+<td class="code"><pre class="brush: groovy;">        return true }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>getRelativePath</code></h3><p>Given a parent path and a child path, assuming the child path is contained within the parent path, return the relative path from the parent to the child. </p></td>
+<td class="code"><pre class="brush: groovy;">
+    public static String getRelativePath(File parent, File child) {
+        def parentPath = parent.canonicalPath.split(&quot;/&quot;)
+        def childPath = child.canonicalPath.split(&quot;/&quot;)
+
+</pre></td></tr><tr>
+<td class="docs"><p>If the parent path is longer it cannot contain the child path and we cannot construct a relative path without backtracking.</p></td>
+<td class="code"><pre class="brush: groovy;">        if (parentPath.length &gt; childPath.length) return &quot;&quot;
+
+</pre></td></tr><tr>
+<td class="docs"><p>Compare the parent and child path up until the end of the parent path.</p></td>
+<td class="code"><pre class="brush: groovy;">        int b = 0
+        while (b &lt; parentPath.length &amp;&amp; parentPath[b] == childPath[b] ) b++;
+
+</pre></td></tr><tr>
+<td class="docs"><p>If we stopped before reaching the end of the parent path it must be that the paths do not match. The parent cannot contain the child and we cannot build a relative path without backtracking.</p></td>
+<td class="code"><pre class="brush: groovy;">        if (b != parentPath.length) return &quot;&quot;
+        return (['.'] + childPath[b..&lt;childPath.length]).join('/') }
+    </pre></td></tr>
+<tr id='gtd.jdb-labs.com/notes/root-directory-map'>
+<td class="docs"><h3><code>findGtdRootDir</code></h3><p>Starting from a give directory, walk upwards through the file system heirarchy looking for the GTD root directory. The use case that motivates this function is when you are currently down in the GTD folder structure, in a context or project subfolder for example, and you need to find the root directory of the GTD structure, somewhere above you.</p><p>This function returns a GTD Root Directory map, which has keys representing each of the top-level GTD directories, including a <code>root</code> key which corresponds to the parent file of these top-level GTD directories. The values are the File objects representing the directories. For example, if the GTD root is at <code>/home/user/gtd</code> then the root map (call it <code>m</code>) will have <code>m.projects ==
+File(&#39;/home/user/gtd/projects&#39;)</code>, <code>m.root == File(&#39;/home/user/gtd&#39;)</code>, etc.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    public static Map findGtdRootDir(File givenDir) {
+
+        def gtdDirs = [:]
+
+</pre></td></tr><tr>
+<td class="docs"><p>Start by considering the current directory as a candidate.</p></td>
+<td class="code"><pre class="brush: groovy;">        File currentDir = givenDir
+        while (currentDir != null) {
+</pre></td></tr><tr>
+<td class="docs"><p>We recognize the GTD root directory when it contains all of the GTD top-level directories.</p></td>
+<td class="code"><pre class="brush: groovy;">            gtdDirs = [&quot;in&quot;, &quot;incubate&quot;, &quot;done&quot;, &quot;next-actions&quot;, &quot;projects&quot;,
+                       &quot;tickler&quot;, &quot;waiting&quot;].
+                collectEntries { [it, new File(currentDir, it)] }
+
+            if (gtdDirs.values().every { dir -&gt; dir.exists() &amp;&amp; dir.isDirectory() }) {
+                gtdDirs.root = currentDir
+                return gtdDirs }
+
+</pre></td></tr><tr>
+<td class="docs"><p>If this was not the GTD root, let's try the parent.</p></td>
+<td class="code"><pre class="brush: groovy;">            currentDir = currentDir.parentFile }
+
+</pre></td></tr><tr>
+<td class="docs"><p>If we never found the GTD root, we return an empty map.</p></td>
+<td class="code"><pre class="brush: groovy;">        return [:] }
+}
+</pre></td></tr>                </tbody>
+            </table>
+        </div>
+    </body>
+</html>

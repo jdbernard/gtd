@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>GTDServlet.groovy</title>
+        <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+        <link type="text/css" rel="stylesheet" media="all"
+            href="../../../../../../.css/jlp.css"></link>
+
+        <!-- syntax highlighting plugin -->
+        <link type="text/css" rel="stylesheet" media="all"
+            href="../../../../../../.sh/styles/shCoreDefault.css"></link>
+        <script type="text/javascript"
+            src="../../../../../../.sh/scripts/XRegExp.js"></script>
+        <script type="text/javascript"
+            src="../../../../../../.sh/scripts/shCore.js"></script>
+
+        <script type="text/javascript"
+            src="../../../../../../.sh/scripts/shBrushGroovy.js"></script>
+        <script type="text/javascript">
+            SyntaxHighlighter.defaults.light = true;
+            SyntaxHighlighter.defaults.unindent = false;
+            SyntaxHighlighter.all();
+        </script>
+    </head>
+    <body>
+        <div id="container">
+            <table cellpadding="0" cellspacing="0">
+                <tbody><tr>
+<td class="docs"><h1>GTDServlet</h1>
+<dl><dt>Author</dt><dd>Jonathan Bernard (jdb@jdb-labs.com)</dd>
+</dl><p>&copy; 2013 <a href="http://jdb-labs.com">JDB Labs LLC</a></p></td>
+<td class="code"><pre class="brush: groovy;">
+package com.jdblabs.gtd.servlet
+
+import com.jdblabs.gtd.Item
+import com.jdblabs.gtd.PropertyHelp
+import com.jdblabs.gtd.Util
+import com.jdbernard.util.SmartConfig
+import groovy.json.JsonBuilder
+import groovy.json.JsonException
+import groovy.json.JsonSlurper
+import java.util.regex.Matcher
+import javax.servlet.ServletConfig
+import javax.servlet.ServletException
+import javax.servlet.http.HttpServlet
+import javax.servlet.http.HttpServletRequest
+import javax.servlet.http.HttpServletResponse
+import javax.servlet.http.HttpSession
+
+import static javax.servlet.http.HttpServletResponse.*
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/servlet/GTDServlet'>
+<td class="docs"><p>Servlet to expose a GTD file-based repository over HTTP via a REST API.</p></td>
+<td class="code"><pre class="brush: groovy;">
+public class GTDServlet extends HttpServlet {
+
+    protected Map gtdDirs
+    private SmartConfig config
+    </pre></td></tr>
+<tr id='gtd.jdb-labs.com/servlet/GTDServlet/TempRequestData'>
+<td class="docs"><h2>TempRequestData</h2><p>Helper class to encapsulate data shared by several methods while fulfilling a single request.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    private class TempRequestData {
+        public String username
+        public def defaultPermissions
+    }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>init</code></h3><p>Overrides <a href="http://docs.oracle.com/javaee/6/api/javax/servlet/GenericServlet.html#init(javax.servlet.ServletConfig)"><code>GenericServlet.init(ServletConfig)</code></a> to configure this servlet instance. Primarily we need to find our GTD root directory and read the <code>.properties</code> configuration file from the GTD root directory.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    void init(ServletConfig config) {
+
+</pre></td></tr><tr>
+<td class="docs"><p>We exepect the path to the GTD root directory to be supplied in the servlet configuration: typically in the <code>web.xml</code> file.</p></td>
+<td class="code"><pre class="brush: groovy;">        String gtdDirName = config.getInitParameter(&quot;gtdRootDir&quot;)
+        this.gtdDirs = Util.findGtdRootDir(new File(gtdDirName))
+        if (!gtdDirs) throw new ServletException(
+            &quot;Unable to initialize GTD servlet: no GTD root dir found in the &quot; +
+            &quot;configured path (${gtdDirName}).&quot;)
+            
+</pre></td></tr><tr>
+<td class="docs"><p>We expect to find a <code>.properties</code> file in the root directory that we will use to configure the servlet for this repository (primarily users and permissions).</p></td>
+<td class="code"><pre class="brush: groovy;">        def cfgFile = new File(gtdDirs.root, '.properties')
+        if (!cfgFile.isFile() || !cfgFile.exists()) throw new ServletException(
+            &quot;Unable to find the GTD/.properties configuration file. &quot; +
+            &quot;Expected to find it at '${cfgFile.canonicalPath}'.&quot;)
+
+        this.config = new SmartConfig(cfgFile) }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>doOptions</code></h3><p>Overrides <a href="http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServlet.html#doOptions(javax.servlet.http.HttpServletRequest,%20javax.servlet.http.HttpServletResponse)"><code>HttpServlet.doOptions</code></a> as we need to include <a href="https://developer.mozilla.org/en-US/docs/HTTP/Access_control_CORS#The_HTTP_response_headers">CORS headers</a> in response to a <a href="https://developer.mozilla.org/en-US/docs/HTTP/Access_control_CORS#Preflighted_requests">CORS pre-flight request</a>.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    void doOptions(HttpServletRequest request, HttpServletResponse response) {
+</pre></td></tr><tr>
+<td class="docs"><p>A browser will not send credentials like session cookies unless the server responds with the exact Origin from the request header, so we will use the Origin header unless the client did not send this header.</p></td>
+<td class="code"><pre class="brush: groovy;">        response.addHeader(&quot;Access-Control-Allow-Origin&quot;,
+            request.getHeader(&quot;Origin&quot;) ?: &quot;*&quot;)
+        response.addHeader(&quot;Access-Control-Allow-Credentials&quot;, &quot;true&quot;)
+        response.status = SC_OK
+        
+</pre></td></tr><tr>
+<td class="docs"><p>We will set the <code>Access-Control-Allow-Methods</code> header based on the endpoint that the client is trying to reach.</p></td>
+<td class="code"><pre class="brush: groovy;">        switch (request.servletPath) {
+            case '/login':
+                response.addHeader(&quot;Allow&quot;, &quot;POST&quot;)
+                response.addHeader(&quot;Access-Control-Allow-Methods&quot;, &quot;POST&quot;)
+                break
+            case ~'/contexts.*':
+            case ~'/projects.*':
+            case ~'/next-actions/.+':
+                response.addHeader(&quot;Allow&quot;, &quot;GET&quot;)
+                response.addHeader(&quot;Access-Control-Allow-Methods&quot;, &quot;GET&quot;)
+                break
+            default:
+                response.status = SC_NOT_FOUND }
+    }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>doPost</code></h3><p>Override the <a href="http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServlet.html#doPost(javax.servlet.http.HttpServletRequest,%20javax.servlet.http.HttpServletResponse)"><code>HttpServlet.doPost</code></a> method to provide responses to <code>POST</code> requests.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    void doPost(HttpServletRequest request, HttpServletResponse response) {
+</pre></td></tr><tr>
+<td class="docs"><p>All our responses use JSON-formatted data.</p></td>
+<td class="code"><pre class="brush: groovy;">        response.addHeader(&quot;Content-Type&quot;, &quot;application/json&quot;)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Add the CORS headers&gt;</p></td>
+<td class="code"><pre class="brush: groovy;">        response.addHeader(&quot;Access-Control-Allow-Origin&quot;,
+            request.getHeader(&quot;Origin&quot;) ?: &quot;*&quot;)
+        response.addHeader(&quot;Access-Control-Allow-Credentials&quot;, &quot;true&quot;)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Get this user's session</p></td>
+<td class="code"><pre class="brush: groovy;">        HttpSession session = request.getSession(true);
+
+</pre></td></tr><tr>
+<td class="docs"><p>If the user is posting to <code>/gtd/login</code> then let's try to authenticate them. We don't care about the state of the existing session.</p></td>
+<td class="code"><pre class="brush: groovy;">        if (request.servletPath == '/login') {
+</pre></td></tr><tr>
+<td class="docs"><p>Parse the username/password from the request.</p></td>
+<td class="code"><pre class="brush: groovy;">            def requestBody
+            try { requestBody = new JsonSlurper().parse(request.reader) }
+            catch (JsonException jsone) {
+                response.status = SC_BAD_REQUEST
+                return }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Build our list of known users.</p></td>
+<td class="code"><pre class="brush: groovy;">            def users = config.accountNames.split(/,/).collect { it.trim() }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Lookup the user's password in the configuration (will be null if we are given an invalid username).</p></td>
+<td class="code"><pre class="brush: groovy;">            String expectedPwd = config.&quot;account.${requestBody.username}.password&quot;
+
+</pre></td></tr><tr>
+<td class="docs"><p>Reject the login request if the user is not defined by our configuration. Note: timing attack possible due to string comparison.</p></td>
+<td class="code"><pre class="brush: groovy;">            if (!users.contains(requestBody.username) ||
+                 requestBody.password != expectedPwd) {
+                response.status = SC_UNAUTHORIZED
+                response.writer.flush()
+                return }
+
+            response.status = SC_OK
+            session.setAttribute('authenticated', true)
+            session.setAttribute('username', requestBody.username)
+            writeJSON([status: &quot;ok&quot;], response)
+            return }
+
+</pre></td></tr><tr>
+<td class="docs"><p>If the user is not authenticated return a <code>401 Unauthorized</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">        else if (!((boolean)session.getAttribute('authenticated'))) {
+            response.status = SC_UNAUTHORIZED
+            return }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Right now there is no other endpoint that supports <code>POST</code>, so return <code>404 Not Found</code> or <code>405 Method Not Allowed</code></p></td>
+<td class="code"><pre class="brush: groovy;">        switch (request.servletPath) {
+            case ~/\/gtd\/contexts.*/: 
+            case ~/\/gtd\/projects.*/: 
+                response.status = SC_METHOD_NOT_ALLOWED
+                return
+            default:
+                response.status = SC_NOT_FOUND
+                return
+        }
+    }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>doGet</code></h3><p>Overrides the <a href="http://docs.oracle.com/javaee/6/api/javax/servlet/http/HttpServlet.html#doGet(javax.servlet.http.HttpServletRequest,%20javax.servlet.http.HttpServletResponse)"><code>HttpServlet.doGet</code></a> method to provide reponses to <code>GET</code> requests.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    void doGet(HttpServletRequest request, HttpServletResponse response) {
+
+        response.status = SC_OK
+
+</pre></td></tr><tr>
+<td class="docs"><p>All of our responses have JSON formatted content.</p></td>
+<td class="code"><pre class="brush: groovy;">        response.addHeader(&quot;Content-Type&quot;, &quot;application/json&quot;)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Add CORS headers.</p></td>
+<td class="code"><pre class="brush: groovy;">        response.addHeader(&quot;Access-Control-Allow-Origin&quot;,
+            request.getHeader(&quot;Origin&quot;) ?: &quot;*&quot;)
+        response.addHeader(&quot;Access-Control-Allow-Credentials&quot;, &quot;true&quot;)
+
+        HttpSession session = request.getSession(true);
+
+</pre></td></tr><tr>
+<td class="docs"><p>If the user is not authenticated return <code>401 Unauthorized</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">        if (!((boolean)session.getAttribute('authenticated'))) {
+            response.status = SC_UNAUTHORIZED
+            return }
+
+        def curData = new TempRequestData()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Read the username from the session object.</p></td>
+<td class="code"><pre class="brush: groovy;">        curData.username = session.getAttribute('username')
+
+</pre></td></tr><tr>
+<td class="docs"><p>Determine the user's default permissions.</p></td>
+<td class="code"><pre class="brush: groovy;">        curData.defaultPermissions =
+            (config.&quot;account.${curData.username}.defaultPermissions&quot; ?: &quot;&quot;)
+            .split(/,/).collect { it.trim() }
+
+        switch(request.servletPath) {
+
+</pre></td></tr><tr>
+<td class="docs"><p>If they are invoking <code>/gtd/logout</code> then invalidate their session and return <code>200 OK</code></p></td>
+<td class="code"><pre class="brush: groovy;">            case &quot;/logout&quot;:
+                session.removeAttribute(&quot;authenticated&quot;)
+                session.invalidate()
+                break
+
+</pre></td></tr><tr>
+<td class="docs"><h5><code>/gtd/contexts</code></h5><p>Return the list of contexts that are readable by this user.</p></td>
+<td class="code"><pre class="brush: groovy;">            case &quot;/contexts&quot;:
+
+</pre></td></tr><tr>
+<td class="docs"><p>Filter all the context directories to find the ones that the user has read access to.</p></td>
+<td class="code"><pre class="brush: groovy;">                def selectedContexts = findAllowedDirs(&quot;read&quot;, curData,
+                    gtdDirs['next-actions'].listFiles())
+
+</pre></td></tr><tr>
+<td class="docs"><p>Now format our response as JSON and write it to the response</p></td>
+<td class="code"><pre class="brush: groovy;">                def returnData = selectedContexts.collect { entry -&gt;
+                    [id: entry.dir.name, title: entry.props.title] }
+
+                writeJSON(returnData, response)
+                break
+
+</pre></td></tr><tr>
+<td class="docs"><h5><code>/gtd/contexts/&lt;contextId&gt;</code></h5><p>Return data for the requested context, assuming it is readable for this user.</p></td>
+<td class="code"><pre class="brush: groovy;">            case ~'/contexts/(.+)':
+                String contextId = Matcher.lastMatcher[0][1]
+
+</pre></td></tr><tr>
+<td class="docs"><p>Try to find the named context.</p></td>
+<td class="code"><pre class="brush: groovy;">                File ctxDir = new File(gtdDirs['next-actions'], contextId)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Check that they have read permission on this directory.</p></td>
+<td class="code"><pre class="brush: groovy;">                def filteredList = findAllowedDirs(&quot;read&quot;, curData, [ctxDir])
+                if (filteredList.size() == 0) {
+                    response.status = SC_NOT_FOUND
+                    writeJSON([status: &quot;not found&quot;], response)
+                    break }
+
+                def entry = filteredList[0]
+                def returnData = [id: entry.dir.name, title: entry.props.title]
+                writeJSON(returnData, response)
+                break
+
+</pre></td></tr><tr>
+<td class="docs"><h5><code>/gtd/projects</code></h5><p>Return the list of projects that are readable for this user.</p></td>
+<td class="code"><pre class="brush: groovy;">            case &quot;/projects&quot;:
+</pre></td></tr><tr>
+<td class="docs"><p>Filter the project directories to find the ones that the user has read access to.</p></td>
+<td class="code"><pre class="brush: groovy;">                def selectedProjects = findAllowedDirs(&quot;read&quot;, curData,
+                    gtdDirs['projects'].listFiles())
+
+                def returnData = selectedProjects.collect { entry -&gt;
+                    [id: entry.dir.name, title: entry.props.title] }
+                writeJSON(returnData, response)
+                break
+
+</pre></td></tr><tr>
+<td class="docs"><h5><code>/gtd/projects/&lt;projectId&gt;</code></h5><p>Return data for the requested project, assuming it is readable for this user.</p></td>
+<td class="code"><pre class="brush: groovy;">            case ~'/projects/(.+)':
+                String projectId = Matcher.lastMatcher[0][1]
+
+</pre></td></tr><tr>
+<td class="docs"><p>Try to find the named project.</p></td>
+<td class="code"><pre class="brush: groovy;">                File projectDir = new File(gtdDirs['projects'], contextId)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Check that they have read permission on this directory.</p></td>
+<td class="code"><pre class="brush: groovy;">                def filteredList = findAllowedDirs(&quot;read&quot;, curData, [projectDir])
+                if (filteredList.size() == 0) {
+                    response.status = SC_NOT_FOUND
+                    writeJSON([status: &quot;not found&quot;], response)
+                    break }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Format as JSON and return.</p></td>
+<td class="code"><pre class="brush: groovy;">                def entry = filteredList[0]
+                def returnData = [id: entry.dir.name, title: entry.props.title]
+                writeJSON(returnData, response)
+                break
+
+</pre></td></tr><tr>
+<td class="docs"><h5><code>/gtd/next-actions/&lt;contexts-and-projects&gt;</code></h5><p>Return all of the items contained in the named contexts and projects, assuming the user has access to them. <code>&lt;contexts-and-projects&gt;</code> is expected to be a comma-delimited list of context and project IDs.</p></td>
+<td class="code"><pre class="brush: groovy;">            case ~'/next-actions/(.+)':
+</pre></td></tr><tr>
+<td class="docs"><p>Parse out the list of contexts/projects</p></td>
+<td class="code"><pre class="brush: groovy;">                List ids = Matcher.lastMatcher[0][1].split(/,/) as List
+
+                List searchDirs = []
+
+</pre></td></tr><tr>
+<td class="docs"><p>Look for each id in our list of contexts</p></td>
+<td class="code"><pre class="brush: groovy;">                searchDirs.addAll(ids.collect { id -&gt;
+                    new File(gtdDirs['next-actions'], id) })
+
+</pre></td></tr><tr>
+<td class="docs"><p>And look for each id in our list of projects</p></td>
+<td class="code"><pre class="brush: groovy;">                searchDirs.addAll(ids.collect { id -&gt;
+                    new File(gtdDirs['projects'], id) })
+
+</pre></td></tr><tr>
+<td class="docs"><p>Filter the directories to find the ones that exist and are readable by our user.</p></td>
+<td class="code"><pre class="brush: groovy;">                def actualDirs = findAllowedDirs(&quot;read&quot;, curData, searchDirs)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Collect all the items.</p></td>
+<td class="code"><pre class="brush: groovy;">                def items = [], itemFiles = [], uniqueItemFiles = []
+
+</pre></td></tr><tr>
+<td class="docs"><p>Collect all the items across all the actual directories.</p></td>
+<td class="code"><pre class="brush: groovy;">                itemFiles = actualDirs.collectMany { entry -&gt;
+                    entry.dir.listFiles({ f -&gt; !f.isHidden() } as FileFilter) as List }
+
+</pre></td></tr><tr>
+<td class="docs"><p>De-duplicate the items using the <a href="../Util.groovy.html#gtd.jdb-labs.com/Util/findAllCopies"><code>Util.findAllCopies</code></a> method to remove items that are listed in a chosen context and project. We are going to do this by identifying duplicate items, removing all of them from the itemFiles list and adding only the first to our new uniqueItemFiles list.</p></td>
+<td class="code"><pre class="brush: groovy;">                while (itemFiles.size() &gt; 0) {
+                    def item = itemFiles.remove(0)
+                    def dupes = Util.findAllCopies(item, gtdDirs.root)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Remove them from the source collection.</p></td>
+<td class="code"><pre class="brush: groovy;">                    itemFiles.removeAll { f1 -&gt; dupes.any { f2 -&gt;
+                        f1.canonicalPath == f2.canonicalPath }}
+
+</pre></td></tr><tr>
+<td class="docs"><p>Add the first one to the destination collection.</p></td>
+<td class="code"><pre class="brush: groovy;">                    uniqueItemFiles &lt;&lt; item }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Create Item objects for each item.</p></td>
+<td class="code"><pre class="brush: groovy;">                items = uniqueItemFiles.collect { new Item(it) }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Return all the items.</p></td>
+<td class="code"><pre class="brush: groovy;">                def returnData = items.collect { item -&gt;
+                    def m = [id: item.file.name]
+                    item.gtdProperties.each { k, v -&gt;
+                        m[k] = PropertyHelp.format(v) }
+                    return m }
+
+                writeJSON(returnData, response)
+                break
+
+</pre></td></tr><tr>
+<td class="docs"><p>Otherwise return a <code>404 Not Found</code></p></td>
+<td class="code"><pre class="brush: groovy;">            default:
+                response.status = SC_NOT_FOUND
+                break
+        }
+
+        response.writer.flush()
+    }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>findAllowedDirs</code></h3><p>Helper method to take a permission or list of permissions, a list of File objects and return the subset of File objects which represent existing directories for which the current user has all of the requested permissions. This method also takes a <a href="#gtd.jdb-labs.com/servlet/GTDServlet/TempRequestData">TempRequestData</a> object which provides access to the username and default permissions for the user making the request.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected Collection findAllowedDirs(String permission,
+    TempRequestData curData, def dirs) {
+        return findAllowedDirs([permission], curData, dirs) }
+
+    protected Collection findAllowedDirs(List requiredPermissions,
+    TempRequestData curData, def dirs) {
+        return dirs.collectMany { dir -&gt;
+
+</pre></td></tr><tr>
+<td class="docs"><p>Only directories can be contexts and projects.</p></td>
+<td class="code"><pre class="brush: groovy;">            if (!dir.exists() || !dir.isDirectory()) { return [] }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Check for a .properties file in this directory.</p></td>
+<td class="code"><pre class="brush: groovy;">            def propFile = new File(dir, '.properties')
+
+</pre></td></tr><tr>
+<td class="docs"><p>If it does not exist, defer to the defaults.</p></td>
+<td class="code"><pre class="brush: groovy;">            if (!propFile.exists() &amp;&amp;
+                !curData.defaultPermissions.containsAll(requiredPermissions)) {
+                return [] }
+            
+</pre></td></tr><tr>
+<td class="docs"><p>Look for the <code>account.&lt;curData.username&gt;.permissions</code> property. <em>Note</em> that the property access on <code>itemProps</code> will write the default value to the properties file if it does not exist. This may result in a new properties file being created.</p></td>
+<td class="code"><pre class="brush: groovy;">            def itemProps = new SmartConfig(propFile)
+            def actualPermissions = itemProps.getProperty(
+                &quot;account.${curData.username}.permissions&quot;, &quot;default&quot;).
+                split(/,/).collect { it.trim() }
+
+</pre></td></tr><tr>
+<td class="docs"><p>If the user has the correct permission on this context, or if this context inherits their default permissions, and they have the correct permission by default, then we allow this context. If this is not the case (tested in the following conditional) we do not allow this context.</p></td>
+<td class="code"><pre class="brush: groovy;">            if (!actualPermissions.containsAll(requiredPermissions) &amp;&amp;
+                !(actualPermissions.containsAll('default') &amp;&amp;
+                  curData.defaultPermissions.containsAll(requiredPermissions))) {
+                return [] }
+
+</pre></td></tr><tr>
+<td class="docs"><p>At this point we know the context exists, and the user has permission to access it.</p></td>
+<td class="code"><pre class="brush: groovy;">            return [[ dir: dir, props: itemProps ]] } }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>writeJSON</code></h3><p>Helper method to write an object as JSON to the response. Mainly used to increase readability. </p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void writeJSON(def data, def response) {
+        new JsonBuilder(data).writeTo(response.writer) }
+}
+</pre></td></tr>                </tbody>
+            </table>
+        </div>
+    </body>
+</html>

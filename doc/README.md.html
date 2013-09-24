@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>README.md</title>
+        <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+        <link type="text/css" rel="stylesheet" media="all"
+            href=".css/jlp.css"></link>
+
+        <!-- syntax highlighting plugin -->
+        <link type="text/css" rel="stylesheet" media="all"
+            href=".sh/styles/shCoreDefault.css"></link>
+        <script type="text/javascript"
+            src=".sh/scripts/XRegExp.js"></script>
+        <script type="text/javascript"
+            src=".sh/scripts/shCore.js"></script>
+        <script type="text/javascript">
+            SyntaxHighlighter.defaults.light = true;
+            SyntaxHighlighter.defaults.unindent = false;
+            SyntaxHighlighter.all();
+        </script>
+    </head>
+    <body>
+        <div id="container">
+            <table cellpadding="0" cellspacing="0">
+                <tbody><tr>
+<td class="docs"><h1>Jonathan Bernard's Getting Things Done implementation.</h1><p>This is my adaptation of the Getting Things Done system by David Allen. There are a lot of tools that adapt his system for various digital platforms, but most of them move away from the folder-based system he created. They try to create new systems based on the core principles of the method outlined in <a href="https://secure.davidco.com/store/catalog/GETTING-THINGS-DONE-PAPERBACK-p-16175.php"><em>Getting Things Done</em></a>, but I was unable to find a system that followed the details of his method. I do not think there is anything wrong with reimagining the system based on the core principles. David Allen advocates that in the book himself. Still, I was very attracted to the folder-based implementation that he descibes; I only wanted to use digital folders and files instead of physical folders and pages.</p><h2>History and Motivation</h2><p>My method initially started as a simple collection of folders, intended to mirror the physical system. As I used this I noticed some common use patterns that would benefit from an automated tool. In particular, I wanted to have the system walk my through the <em>process</em> phase. It was too easy for me to forget some of the important principles of this phase: immediately doing anything that could be done in 5 minutes or less, identifying the next action for an item, and sorting the action correctly. Out of this the <a href="src/main/com/jdblabs/gtd/cli/GTDCLI.groovy.html#gtd.jdb-labs.com/cli/GTDCLI">command-line tool</a> was born.</p><p>As I started using the system for everything I started desiring to have some way to publish my plans (or at least some contexts of my plans, like work). This lead me to implement a <a href="src/main/com/jdblabs/gtd/servlet/GTDServlet.groovy.html#gtd.jdb-labs.com/servlet/GTDServlet">REST API</a> that interfaced with the repository (still just files) so that I could easily embed this information in a web page, or allow controlled access to the system from a client application.</p><h2>How It Works</h2><p><em>TODO</em></p><h2>Code Index</h2><h3>com.jdblabs.gtd</h3>
+<dl><dt><a href="src/main/com/jdblabs/gtd/Item.groovy.html#gtd.jdb-labs.com/Item">Item</a></dt><dd>One item in the GTD system (a <em>next action</em> for example). This class is a wrapper around the File to make it easier to work programatically with GTD items.</dd><dt><a href="src/main/com/jdblabs/gtd/PropertyHelp.groovy.html#gtd.jdb-labs.com/PropertyHelp">PropertyHelp</a></dt><dd>Simple serialization support for item properties. Used to read and write properties from an item file.</dd><dt><a href="src/main/com/jdblabs/gtd/Util.groovy.html#gtd.jdb-labs.com/Util">Util</a></dt><dd>Utility methods common to this implementation of the Getting Things Done method.</dd>
+</dl><h3>com.jdblabs.gtd.cli</h3>
+<dl><dt><a href="src/main/com/jdblabs/gtd/cli/GTDCLI.groovy.html#gtd.jdb-labs.com/cli/GTDCLI">GTDCLI</a></dt><dd>Command-line interface to the GTD repository. The repository organization is intended to be simple enough that standard UNIX command-line tools are sufficient, but it is useful to add some specific commands to walk you through the processing phase or manage duplicated entries (when tracking an item in a next-actions context and a project folder, for example).</dd>
+</dl><h3>com.jdblabs.gts.servlet</h3>
+<dl><dt><a href="src/main/com/jdblabs/gtd/servlet/GTDServlet.groovy.html#gtd.jdb-labs.com/servlet/GTDServlet">GTDServlet</a></dt><dd>Standard Java servlet to expose the repository via</dd>
+</dl></td>
+<td class="code"><pre class="brush: markdown;"></pre></td></tr>                </tbody>
+            </table>
+        </div>
+    </body>
+</html>

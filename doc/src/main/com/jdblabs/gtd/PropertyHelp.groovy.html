@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>PropertyHelp.groovy</title>
+        <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+        <link type="text/css" rel="stylesheet" media="all"
+            href="../../../../../.css/jlp.css"></link>
+
+        <!-- syntax highlighting plugin -->
+        <link type="text/css" rel="stylesheet" media="all"
+            href="../../../../../.sh/styles/shCoreDefault.css"></link>
+        <script type="text/javascript"
+            src="../../../../../.sh/scripts/XRegExp.js"></script>
+        <script type="text/javascript"
+            src="../../../../../.sh/scripts/shCore.js"></script>
+
+        <script type="text/javascript"
+            src="../../../../../.sh/scripts/shBrushGroovy.js"></script>
+        <script type="text/javascript">
+            SyntaxHighlighter.defaults.light = true;
+            SyntaxHighlighter.defaults.unindent = false;
+            SyntaxHighlighter.all();
+        </script>
+    </head>
+    <body>
+        <div id="container">
+            <table cellpadding="0" cellspacing="0">
+                <tbody><tr>
+<td class="docs"><h1>PropertyHelp</h1>
+<dl><dt>Author</dt><dd>Jonathan Bernard (jdb@jdb-labs.com)</dd>
+</dl><p>&copy; 2013 <a href="http://jdb-labs.com">JDB Labs LLC</a></p></td>
+<td class="code"><pre class="brush: groovy;">
+package com.jdblabs.gtd
+
+import org.joda.time.DateMidnight
+import org.joda.time.DateTime
+
+import java.text.SimpleDateFormat
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/PropertyHelp'>
+<td class="docs"><p>A poor man's serialization/deserialization library. Each Enum value represents a datatype that this class knows how to handle. The Enum entries consist of a regex to match data in textual form, a Class to match Java objects, a parse function to convert the textual form to a Java object, and a format function to convert a Java object to textual form.</p></td>
+<td class="code"><pre class="brush: groovy;">
+public enum PropertyHelp {
+
+</pre></td></tr><tr>
+<td class="docs"><p><strong>Note:</strong> Property types should be ordered here in order of decreasing specificity. That is, subclasses should come before the more general class so that objects are converted using the most specific class that PropertyHelp knows how to work with.</p></td>
+<td class="code"><pre class="brush: groovy;">
+</pre></td></tr><tr>
+<td class="docs"><h4><code>DATE_MIDNIGHT</code> (<a href="http://joda-time.sourceforge.net/apidocs/org/joda/time/DateMidnight.html"><code>org.joda.time.DateMidnight</code></a>)</h4><p>2013-09-22</p></td>
+<td class="code"><pre class="brush: groovy;">    DATE_MIDNIGHT(/^\d{4}-\d{2}-\d{2}$/, DateMidnight,
+        { v -&gt; DateMidnight.parse(v) },
+        { d -&gt; d.toString(&quot;YYYY-MM-dd&quot;) }),
+
+</pre></td></tr><tr>
+<td class="docs"><h4><code>DATETIME</code> (<a href="http://joda-time.sourceforge.net/apidocs/org/joda/time/DateTime.html"><code>org.joda.time.DateTime</code></a>)</h4><p>2013-09-22T13:42:57</p></td>
+<td class="code"><pre class="brush: groovy;">    DATETIME(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/, DateTime,
+        { v -&gt; DateTime.parse(v) },
+        { d -&gt; d.toString(&quot;YYYY-MM-dd'T'HH:mm:ss&quot;) }),
+
+</pre></td></tr><tr>
+<td class="docs"><p>We never want to parse a value into a <a href="http://docs.oracle.com/javase/6/docs/api/java/util/Date.html"><code>java.util.Date</code></a> or <a href="http://docs.oracle.com/javase/6/docs/api/java/util/Calendar.html"><code>java.util.Calendar</code></a> object (we are using Joda Time instead of the standard Java Date and Calendar objects) but we do want to be able to handle if someone gives us a Date or Calendar object. </p></td>
+<td class="code"><pre class="brush: groovy;">
+</pre></td></tr><tr>
+<td class="docs"><h4><code>DATE</code> (<a href="http://docs.oracle.com/javase/6/docs/api/java/util/Date.html">java.util.Date</a>)</h4></td>
+<td class="code"><pre class="brush: groovy;">    DATE(NEVER_MATCH, Date,
+        { v -&gt; v }, // never called
+        { d -&gt; dateFormat.format(d) }),
+
+</pre></td></tr><tr>
+<td class="docs"><h4><code>CALENDAR</code> (<a href="http://docs.oracle.com/javase/6/docs/api/java/util/Calendar.html"><code>java.util.Calendar</code></a>)</h4></td>
+<td class="code"><pre class="brush: groovy;">    CALENDAR(NEVER_MATCH, Calendar,
+        { v -&gt; v }, // never called
+        { c -&gt;
+            def df = dateFormat.clone()
+            df.calendar = c
+            df.format(c.time) }),
+
+</pre></td></tr><tr>
+<td class="docs"><p>Similarly, we always parse integers into <a href="http://docs.oracle.com/javase/6/docs/api/java/lang/Long.html"><code>Long</code></a> objects, and floating point values into <a href="http://docs.oracle.com/javase/6/docs/api/java/lang/Double.html"><code>Double</code></a> objects.</p></td>
+<td class="code"><pre class="brush: groovy;">
+</pre></td></tr><tr>
+<td class="docs"><h4><code>INTEGER</code> (<a href="http://docs.oracle.com/javase/6/docs/api/java/lang/Integer.html"><code>java.lang.Integer</code></a>)</h4></td>
+<td class="code"><pre class="brush: groovy;">    INTEGER(NEVER_MATCH, Integer,
+        { v -&gt; v as Integer }, // never called
+        { i -&gt; i as String }),
+
+</pre></td></tr><tr>
+<td class="docs"><h4><code>LONG</code> (<a href="http://docs.oracle.com/javase/6/docs/api/java/lang/Long.html"><code>java.lang.Long</code></a>)</h4></td>
+<td class="code"><pre class="brush: groovy;">    LONG(/^\d+$/, Long,
+        { v -&gt; v as Long },
+        { l -&gt; l as String }),
+
+</pre></td></tr><tr>
+<td class="docs"><h4><code>FLOAT</code> (<a href="http://docs.oracle.com/javase/6/docs/api/java/lang/Float.html"><code>java.lang.Float</code></a>)</h4></td>
+<td class="code"><pre class="brush: groovy;">    FLOAT(NEVER_MATCH, Float,
+        { v -&gt; v as Float}, // never called
+        { f -&gt; f as String}),
+
+</pre></td></tr><tr>
+<td class="docs"><h4><code>DOUBLE</code> (<a href="http://docs.oracle.com/javase/6/docs/api/java/lang/Double.html"><code>java.lang.Double</code></a>)</h4></td>
+<td class="code"><pre class="brush: groovy;">    DOUBLE(/^\d+\.\d+$/, Double,
+        { v -&gt; v as Double },
+        { d -&gt; d as String });
+
+    String pattern;
+    Class klass;
+    def parseFun, formatFun;
+
+    private static SimpleDateFormat dateFormat =
+        new SimpleDateFormat(&quot;yyyy-MM-dd'T'HH:mm:ss&quot;);
+
+</pre></td></tr><tr>
+<td class="docs"><p>This pattern for can never match (is uses negative lookahead to contradict itself)</p></td>
+<td class="code"><pre class="brush: groovy;">    private static String NEVER_MATCH = /(?!x)x/;
+
+</pre></td></tr><tr>
+<td class="docs"><h4>constructor</h4></td>
+<td class="code"><pre class="brush: groovy;">    public PropertyHelp(String pattern, Class klass, def parseFun,
+    def formatFun) {
+        this.pattern = pattern
+        this.klass = klass
+        this.parseFun = parseFun
+        this.formatFun = formatFun }
+
+</pre></td></tr><tr>
+<td class="docs"><h4><code>matches</code></h4><p>Test if this Enum will match a given textual value.</p></td>
+<td class="code"><pre class="brush: groovy;">    public boolean matches(String prop) { return prop ==~ pattern }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Test if this Enum will match a given Java Class.</p></td>
+<td class="code"><pre class="brush: groovy;">    public boolean matches(Class klass) { return this.klass == klass }
+
+</pre></td></tr><tr>
+<td class="docs"><h4><code>parse</code></h4><p>Try to parse a given textual value.</p></td>
+<td class="code"><pre class="brush: groovy;">    public static Object parse(String value) {
+</pre></td></tr><tr>
+<td class="docs"><p>Try to find a matching converter.</p></td>
+<td class="code"><pre class="brush: groovy;">        def propertyType = PropertyHelp.values().find { it.matches(value) }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Use the converter to parse the value. If we did not find a converter we assume this value is a plain string.</p></td>
+<td class="code"><pre class="brush: groovy;">        return propertyType ? propertyType.parseFun(value) : value }
+
+</pre></td></tr><tr>
+<td class="docs"><h4><code>format</code></h4><p>Try to format a given Java Object as a String.</p></td>
+<td class="code"><pre class="brush: groovy;">    public static String format(def object) {
+</pre></td></tr><tr>
+<td class="docs"><p>Try to find a converter that can handle this object type.</p></td>
+<td class="code"><pre class="brush: groovy;">        def propertyType = PropertyHelp.values().find {
+            it.klass.isInstance(object) }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Use the converter to format it as a string. If none was found we use the object's <code>toString()</code> method.</p></td>
+<td class="code"><pre class="brush: groovy;">        return propertyType ? propertyType.formatFun(object) : object.toString() }
+}
+</pre></td></tr>                </tbody>
+            </table>
+        </div>
+    </body>
+</html>
