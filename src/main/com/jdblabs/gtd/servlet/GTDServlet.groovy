@@ -24,6 +24,7 @@ import static javax.servlet.http.HttpServletResponse.*
 
 /**
  * Servlet to expose a GTD file-based repository over HTTP via a REST API.
+ * @org gtd.jdb-labs.com/servlet/GTDServlet
  */
 public class GTDServlet extends HttpServlet {
 
@@ -34,7 +35,7 @@ public class GTDServlet extends HttpServlet {
       * Helper class to encapsulate data shared by several methods while
       * fulfilling a single request.
       *
-      * @org gtd.jdb-labs.com/GTDServlet/TempRequestData */
+      * @org gtd.jdb-labs.com/servlet/GTDServlet/TempRequestData */
     private class TempRequestData {
         public String username
         public def defaultPermissions
@@ -364,7 +365,7 @@ public class GTDServlet extends HttpServlet {
       * object which provides access to the username and default permissions
       * for the user making the request.
       *
-      * [7]: jlp://gtd.jdb-labs.com/GTDServlet/TempRequestData */
+      * [7]: jlp://gtd.jdb-labs.com/servlet/GTDServlet/TempRequestData */
     protected Collection findAllowedDirs(String permission,
     TempRequestData curData, def dirs) {
         return findAllowedDirs([permission], curData, dirs) }

@@ -19,7 +19,8 @@ import static com.jdblabs.gtd.Util.*
 
 /**
  * Command-line helper for working with this implementation of the Getting
- * Things Done method. */
+ * Things Done method.
+ * @org gtd.jdb-labs.com/cli/GTDCLI */
 public class GTDCLI {
 
     public static final String VERSION = "1.2"
@@ -51,7 +52,7 @@ public class GTDCLI {
             ".gtdclirc"))
 
         /// Actual processing is done by the
-        /// [`run`](jlp://gtd.jdb-labs.com/GTDCLI/run) method
+        /// [`run`](jlp://gtd.jdb-labs.com/cli/GTDCLI/run) method
         if (args.length > 0) args[-1] = args[-1].trim()
         inst.run(args) }
 
@@ -107,7 +108,7 @@ public class GTDCLI {
     /** #### `run`
       * This method does the work of processing the user input and taking the
       * appropriate action.
-      * @org gtd.jdb-labs.com/GTDCLI/run */
+      * @org gtd.jdb-labs.com/cli/GTDCLI/run */
     protected void run(String[] args) {
         
         /// Simple CLI options:
@@ -167,7 +168,7 @@ public class GTDCLI {
       * Implement the *process* step of the GTD method. For details, see the
       * [online help][help-process] included by running `gtd help process`
       *
-      * [help-process]: jlp://gtd.jdb-labs.com/GTDCLI/help/process
+      * [help-process]: jlp://gtd.jdb-labs.com/cli/GTDCLI/help/process
       */
     protected void process(LinkedList args) {
 
@@ -311,7 +312,7 @@ public class GTDCLI {
       * information see the [online help][help-done] by running 
       * `gtd help done`.
       *
-      * [help-done]: jlp://gtd.jdb-labs.com/GTDCLI/help/done
+      * [help-done]: jlp://gtd.jdb-labs.com/cli/GTDCLI/help/done
       */
     protected void done(LinkedList args) {
 
@@ -367,7 +368,7 @@ public class GTDCLI {
       * scheduled on the calendar. For detailed information see the
       * [online help][help-calendar] by running `gtd help calendar`.
       *
-      * [help-calendar]: jlp://gtd.jdb-labs.com/GTDCLI/help/calendar
+      * [help-calendar]: jlp://gtd.jdb-labs.com/cli/GTDCLI/help/calendar
       */
     protected void calendar(LinkedList args) {
         def itemsOnCalendar = []
@@ -411,7 +412,7 @@ public class GTDCLI {
       * item in the repository. For detailed information see the
       * [online help][help-list-copies] by running `gtd help list-copies`.
       *
-      * [help-list-copies]: jlp://gtd.jdb-labs.com/GTDCLI/help/list-copies
+      * [help-list-copies]: jlp://gtd.jdb-labs.com/cli/GTDCLI/help/list-copies
       */
     protected void listCopies(LinkedList args) {
 
@@ -444,7 +445,7 @@ public class GTDCLI {
       * directory. For detailed information see the [online help][help-new] by
       * running `gtd help new`.
       *
-      * [help-new]: jlp://gtd.jdb-labs.com/GTDCLI/help/new
+      * [help-new]: jlp://gtd.jdb-labs.com/cli/GTDCLI/help/new
       */
     protected void newAction(LinkedList args) {
 
@@ -482,7 +483,7 @@ public class GTDCLI {
       * information see the [online help][help-tickler] by running
       * `gtd help tickler`.
       *
-      * [help-tickler]: jlp://gtd.jdb-labs.com/GTDCLI/help/tickler
+      * [help-tickler]: jlp://gtd.jdb-labs.com/cli/GTDCLI/help/tickler
       */
     protected void tickler(LinkedList args) {
 
@@ -507,7 +508,7 @@ public class GTDCLI {
       * information see the [online help][help-ls] by running
       * `gtd help ls`.
       *
-      * [help-ls]: jlp://gtd.jdb-labs.com/GTDCLI/help/ls
+      * [help-ls]: jlp://gtd.jdb-labs.com/cli/GTDCLI/help/ls
       */
     protected void ls(LinkedList args) {
 
@@ -581,7 +582,7 @@ top-level commands:
 
             switch(command.toLowerCase()) {
                 /// Online help for the `process` command.
-                /// @org gtd.jdb-labs.com/GTDCLI/help/process
+                /// @org gtd.jdb-labs.com/cli/GTDCLI/help/process
                 case ~/process/: println """\
 usage: gtd process
 
@@ -613,7 +614,7 @@ and guides you through the *process* step of the GTD method as follows:
                     break
 
                 /// Online help for the `done` command.
-                /// @org gtd.jdb-labs.com/GTDCLI/help/done
+                /// @org gtd.jdb-labs.com/cli/GTDCLI/help/done
                 case ~/done/: println """\
 usage: gtd done <action-file>
 
@@ -636,7 +637,7 @@ exact file contents (MD5 hash of the file contents)."""
                     break
 
                 /// Online help for the `calendar` command.
-                /// @org gtd.jdb-labs.com/GTDCLI/help/calendar
+                /// @org gtd.jdb-labs.com/cli/GTDCLI/help/calendar
                 case ~/calendar/: println """\
 usage: gtd calendar
 
@@ -647,7 +648,7 @@ things that *must* be done on the assigned date."""
                     break
 
                 /// Online help for the `list-copies` command.
-                /// @org gtd.jdb-labs.com/GTDCLI/help/list-copies
+                /// @org gtd.jdb-labs.com/cli/GTDCLI/help/list-copies
                 case ~/list-copies/: println """\
 usage: gtd list-copies <action-file>
 
@@ -659,7 +660,7 @@ duplicates of this item."""
                     break
 
                 /// Online help for the `new` command.
-                /// @org gtd.jdb-labs.com/GTDCLI/help/new
+                /// @org gtd.jdb-labs.com/cli/GTDCLI/help/new
                 case ~/new/: println """\
 usage: gtd new
 
@@ -670,7 +671,7 @@ directory."""
                     break
 
                 /// Online help for the `tickler` command.
-                /// @org gtd.jdb-labs.com/GTDCLI/help/tickler
+                /// @org gtd.jdb-labs.com/cli/GTDCLI/help/tickler
                 case ~/tickler/: println """\
 usage: gtd tickler
 
@@ -680,7 +681,7 @@ and moves them out of the tickler file and into the next-actions file."""
                     break
 
                 /// Online help for the `ls`/`list-context` command.
-                /// @org gtd.jdb-labs.com/GTDCLI/help/ls
+                /// @org gtd.jdb-labs.com/cli/GTDCLI/help/ls
                 case ~/ls|list-context/: println """\
 usage gtd ls [<context> ...]
 
