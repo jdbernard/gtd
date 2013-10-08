@@ -23,7 +23,7 @@ import static com.jdblabs.gtd.Util.*
  * @org gtd.jdb-labs.com/cli/GTDCLI */
 public class GTDCLI {
 
-    public static final String VERSION = "1.2"
+    public static final String VERSION = "1.3"
     private static String EOL = System.getProperty("line.separator")
 
     /// We have a persistent instance when we are in the context of a Nailgun
@@ -520,7 +520,8 @@ public class GTDCLI {
             if (!dir.exists() || !dir.isDirectory()) return
             println "-- ${getRelativePath(gtdDirs.root, dir)} --"
             dir.eachFile { file ->
-                if (!file.exists() || !file.isFile() || file.isHidden())
+                if (!file.exists() || !file.isFile() || file.isHidden() ||
+                    file.name.startsWith('.'))
                     return
 
                 def item = new Item(file)

@@ -40,8 +40,8 @@ public class Util {
       * path. This algorithm does not consider symlinks or hard links. It
       * operates based on the textual path names. */
     public static boolean inPath(File parent, File child) {
-        def parentPath = parent.canonicalPath.split("/")
-        def childPath = child.canonicalPath.split("/")
+        def parentPath = parent.canonicalPath.split("[\\\\/]")
+        def childPath = child.canonicalPath.split("[\\\\/]")
 
         /// If the parent path is longer than the child path it cannot contain
         /// the child path.
@@ -64,8 +64,8 @@ public class Util {
       * contained within the parent path, return the relative path from the
       * parent to the child. */
     public static String getRelativePath(File parent, File child) {
-        def parentPath = parent.canonicalPath.split("/")
-        def childPath = child.canonicalPath.split("/")
+        def parentPath = parent.canonicalPath.split("[\\\\/]")
+        def childPath = child.canonicalPath.split("[\\\\/]")
 
         /// If the parent path is longer it cannot contain the child path and
         /// we cannot construct a relative path without backtracking.
