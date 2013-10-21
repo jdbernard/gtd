@@ -184,6 +184,7 @@ public class GTDCLI {
             println ""
             def response
             def readline = {stdin.nextLine().trim()}
+            def oldFile = item.file
 
             /// 1. Is it actionable?
             if (!item.title) item.title = filenameToString(item.file)
@@ -209,7 +210,6 @@ public class GTDCLI {
                             PropertyHelp.parse(parts[1].trim())
                         print "> " }
 
-                    def oldFile = item.file
                     item.file = new File(gtdDirs.incubate, item.file.name)
                     item.save()
                     oldFile.delete() }
@@ -224,7 +224,6 @@ public class GTDCLI {
                     readline();
 
                     def date = new DateMidnight().toString("YYYY-MM-dd")
-                    def oldFile = item.file
                     item.file = new File(gtdDirs.done, "$date-${item.file.name}")
                     item.save()
                     oldFile.delete()
@@ -250,7 +249,6 @@ public class GTDCLI {
 
                 /// Yes, this deserves it's own project folder.
                 if (response ==~ /yes|y/) {
-                    def oldFile = item.file
                     item.file = new File(gtdDirs.projects,
                                          stringToFilename(item.outcome))
                     item.save()
@@ -271,27 +269,16 @@ public class GTDCLI {
                         item.action = prompt([
                             "Next action (who needs to do what).", ""])
 
-                        def oldFile = item.file
-                        item.file = new File(gtdDirs.waiting,
-                                             stringToFilename(item.action))
-                        item.save()
-                        oldFile.delete()
-
-                        println "Moved to ${gtdDirs.waiting.name} folder." }
+                        item.file = new File(promptContext(gtdDirs.waiting),
+                                             stringToFilename(item.action)) }
 
 
-                    /// Defer, move to teh *next-actions* folder.
+                    /// Defer, move to the *next-actions* folder.
                     else if (response =~ /def/) {
                         item.action = prompt(["Next action.", ""])
 
-                        def oldFile = item.file
-                        item.file = new File(gtdDirs["next-actions"],
-                                             stringToFilename(item.action))
-                        item.save()
-                        oldFile.delete()
-
-                        println "Moved to the ${gtdDirs['next-actions'].name} folder."
-                    }
+                        item.file = new File(promptContext(gtdDirs["next-actions"]),
+                                             stringToFilename(item.action)) }
 
                     /// Forget for now, move it to the *tickler* folder.
                     else {
@@ -300,12 +287,26 @@ public class GTDCLI {
                             "When do you want it to become active?",
                             "(YYYY-MM-DD)"])
 
-                        def oldFile = item.file
                         item.file = new File(gtdDirs.tickler,
+                                             stringToFilename(item.action)) }
+                        
+                    item.save()
+                    oldFile.delete()
+
+                    println "Moved to " +
+                        getRelativePath(gtdDirs.root, item.file.parentFile)
+                        
+                    /// If we have a project property, and a corresponding
+                    /// project folder exists, copy the item there.
+                    def projectDir = new File(gtdDirs.projects,
+                                              item.project ?: '')
+                    if (item.project && projectDir.exists() &&
+                        projectDir.isDirectory()) {
+                        item.file = new File(projectDir,
                                              stringToFilename(item.action))
                         item.save()
-                        oldFile.delete()
-                        println "Moved to the ${gtdDirs.tickler.name} folder." } } } } }
+                        println "Copied to " +
+                            getRelativePath(gtdDirs.root, item.file.parentFile) } } } } }
 
     /** #### `done`
       * Implement the `done` command to mark items as completed. For detailed
@@ -475,7 +476,16 @@ public class GTDCLI {
                 PropertyHelp.parse(parts[1].trim())
             print "> " }
 
-        item.save() }
+        item.save()
+        
+        /// If we have a project property, and a corresponding project folder
+        /// exists, copy the item there.
+        def projectDir = new File(gtdDirs.projects, item.project ?: '')
+        if (item.project && projectDir.exists() && projectDir.isDirectory()) {
+            item.file = new File(projectDir, stringToFilename(item.action))
+            item.save()
+            println "Copied to " +
+                getRelativePath(gtdDirs.root, item.file.parentFile) } }
 
     /** #### `tickler`
       * Implement the `tickler` command to move items in the *tickler* folder to
@@ -706,6 +716,28 @@ context or project is named, all contexts are listed."""
         while(!(line = stdin.nextLine().trim())) print msg 
         
         return line }
+
+    /** #### `promptContext`
+      * Prompt the user to choose a context (subdirectory of the given
+      * directory). */
+    protected File promptContext(File baseDir) {
+        print "Context?> "
+        def line
+        def contextFile
+
+        line = stdin.nextLine().trim()
+        contextFile = line ? new File(baseDir, line) : baseDir
+
+        while (!contextFile.exists() || !contextFile.isDirectory()) {
+            println "Available contexts:"
+            baseDir.eachDir { print "\t${it.name}"}
+            println ""
+
+            print "Context?> "
+            line = stdin.nextLine().trim()
+            contextFile = line ? new File(baseDir, line) : baseDir }
+        
+        return contextFile }
 
     /** #### `filenameToString`
       * The default pretty-print conversion for filenames. */
