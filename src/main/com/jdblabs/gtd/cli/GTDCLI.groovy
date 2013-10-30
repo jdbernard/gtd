@@ -23,7 +23,7 @@ import static com.jdblabs.gtd.Util.*
  * @org gtd.jdb-labs.com/cli/GTDCLI */
 public class GTDCLI {
 
-    public static final String VERSION = "1.5"
+    public static final String VERSION = "1.6"
     private static String EOL = System.getProperty("line.separator")
 
     /// We have a persistent instance when we are in the context of a Nailgun
@@ -318,51 +318,59 @@ public class GTDCLI {
     protected void done(LinkedList args) {
 
         def selectedFilePath = args.poll()
-        def selectedFile = new File(selectedFilePath)
 
-        if (!selectedFile) {
+        if (!selectedFilePath) {
             println "gtd done command requires a <action-file> parameter."
             return }
 
-        def item
-        if (selectedFile.isAbsolute()) item = new Item(selectedFile)
-        else item = new Item(new File(workingDir, selectedFilePath))
+        while (selectedFilePath) {
+            def item
+            def selectedFile = new File(selectedFilePath)
 
-        /// Move to the done folder.
-        def oldFile = item.file
-        def date = new DateMidnight().toString("YYYY-MM-dd")
-        item.file = new File(gtdDirs.done, "$date-${item.file.name}")
-        item.save()
+            if (!selectedFile.exists() || !selectedFile.isFile()) {
+                println "File does not exist or is a directory:"
+                println "\t" + selectedFile.canonicalPath
+                continue }
 
-        /// Check if this item was in a project folder.
-        if (inPath(gtdDirs.projects, oldFile)) {
+            if (selectedFile.isAbsolute()) item = new Item(selectedFile)
+            else item = new Item(new File(workingDir, selectedFilePath))
 
-            /// Delete any copies of this item from the next actions folder.
-            findAllCopies(oldFile, gtdDirs."next-actions").each { file ->
-                println "Deleting duplicate entry from the " +
-                        "${file.parentFile.name} context."
-                file.delete() }
+            /// Move to the done folder.
+            def oldFile = item.file
+            def date = new DateMidnight().toString("YYYY-MM-dd")
+            item.file = new File(gtdDirs.done, "$date-${item.file.name}")
+            item.save()
 
-            /// Delete any copies of this item from the waiting folder.
-            findAllCopies(oldFile, gtdDirs.waiting).each { file ->
-                println "Deleting duplicate entry from the " +
-                    "${file.parentFile.name} waiting context."
-                file.delete() }}
+            /// Check if this item was in a project folder.
+            if (inPath(gtdDirs.projects, oldFile)) {
 
-        /// Check if this item was in the next-action or waiting folder.
-        if (inPath(gtdDirs["next-actions"], oldFile) ||
-            inPath(gtdDirs.waiting, oldFile)) {
+                /// Delete any copies of this item from the next actions folder.
+                findAllCopies(oldFile, gtdDirs."next-actions").each { file ->
+                    println "Deleting duplicate entry from the " +
+                            "${file.parentFile.name} context."
+                    file.delete() }
 
-            /// Delete any copies of this item from the projects folder.
-            findAllCopies(oldFile, gtdDirs.projects).each { file ->
-                println "Deleting duplicate entry from the " +
-                    "${file.parentFile.name} project."
-                file.delete() }}
+                /// Delete any copies of this item from the waiting folder.
+                findAllCopies(oldFile, gtdDirs.waiting).each { file ->
+                    println "Deleting duplicate entry from the " +
+                        "${file.parentFile.name} waiting context."
+                    file.delete() }}
 
-        /// Delete the original
-        oldFile.delete()
+            /// Check if this item was in the next-action or waiting folder.
+            if (inPath(gtdDirs["next-actions"], oldFile) ||
+                inPath(gtdDirs.waiting, oldFile)) {
 
-        println "'$item' marked as done." }
+                /// Delete any copies of this item from the projects folder.
+                findAllCopies(oldFile, gtdDirs.projects).each { file ->
+                    println "Deleting duplicate entry from the " +
+                        "${file.parentFile.name} project."
+                    file.delete() }}
+
+            /// Delete the original
+            oldFile.delete()
+
+            selectedFilePath = args.poll()
+            println "'$item' marked as done." } }
     
     /** #### `calendar`
       * Implement the `calendar` command to show all the items which are
@@ -749,7 +757,7 @@ context or project is named, all contexts are listed."""
       * palatable for a filename. */
     public static String stringToFilename(String s) {
         return s.replaceAll(/\s/, '-').
-                replaceAll(/[';:(\.$)]/, '').
+                replaceAll(/[';:(\.$\/)]/, '').
                 toLowerCase() }
 }
 
