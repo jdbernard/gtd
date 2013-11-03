@@ -5,6 +5,14 @@
  */
 package com.jdblabs.gtd.cli
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.LoggerContext
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder
+import ch.qos.logback.classic.filter.LevelFilter
+import ch.qos.logback.classic.filter.ThresholdFilter
+import ch.qos.logback.core.OutputStreamAppender
+import ch.qos.logback.core.spi.FilterReply
 import com.jdblabs.gtd.Item
 import com.jdblabs.gtd.PropertyHelp
 import com.jdbernard.util.LightOptionParser
@@ -12,8 +20,8 @@ import com.martiansoftware.nailgun.NGContext
 import java.security.MessageDigest
 import org.joda.time.DateMidnight
 import org.joda.time.DateTime
-//import org.slf4j.Logger
-//import org.slf4j.LoggerFactory
+import org.slf4j.Logger as SFL4JLogger
+import org.slf4j.LoggerFactory
 
 import static com.jdblabs.gtd.Util.*
 
@@ -23,7 +31,7 @@ import static com.jdblabs.gtd.Util.*
  * @org gtd.jdb-labs.com/cli/GTDCLI */
 public class GTDCLI {
 
-    public static final String VERSION = "1.6"
+    public static final String VERSION = "1.8"
     private static String EOL = System.getProperty("line.separator")
 
     /// We have a persistent instance when we are in the context of a Nailgun
@@ -41,7 +49,21 @@ public class GTDCLI {
     /// [root-map]: jlp://gtd.jdb-labs.com/notes/root-directory-map
     private Map<String, File> gtdDirs
 
-    //private Logger log = LoggerFactory.getLogger(getClass())
+    /// Logging objects
+    private Logger log
+    private OutputStreamAppender otherAppender
+    private OutputStreamAppender infoAppender
+    private ThresholdFilter thresholdFilter
+    private LevelFilter rejectInfo
+    private String loggingThreshold
+
+    public void setLoggingThreshold(String level) {
+        if (thresholdFilter) {
+            System.out.println "Changing logging level to $level"
+            thresholdFilter.stop()
+            thresholdFilter.level = level
+            thresholdFilter.start() }
+        this.loggingThreshold = level }
 
     /** #### `main`
       * Main entry point for a normal GTD CLI process. */
@@ -54,16 +76,18 @@ public class GTDCLI {
         /// Actual processing is done by the
         /// [`run`](jlp://gtd.jdb-labs.com/cli/GTDCLI/run) method
         if (args.length > 0) args[-1] = args[-1].trim()
+
         inst.run(args) }
 
     /** #### `nailMain`
       * Entry point for a GTD CLI process under [Nailgun][ng].
       * [ng]: http://www.martiansoftware.com/nailgun/ */
     public static void nailMain(NGContext context) {
-        if (nailgunInst == null)
+
+        if (nailgunInst == null) {
             nailgunInst = new GTDCLI(new File(
-                System.getProperty("user.home"), ".gtdclirc"))
-        else nailgunInst.stdin = new Scanner(context.in)
+                System.getProperty("user.home"), ".gtdclirc")) }
+        else { nailgunInst.stdin = new Scanner(context.in) }
 
         /// Trim the last argument; not all cli's are well-behaved
         if (context.args.length > 0) context.args[-1] = context.args[-1].trim()
@@ -74,6 +98,7 @@ public class GTDCLI {
       * This method reloads the configuration before invoking the run function,
       * allowing a long-lived instance to react to configuration changes. */
     public static void reconfigure(String[] args) {
+
         /// If we do not have a long-running Nailgun instance we just call
         /// main.
         if (nailgunInst == null) main(args)
@@ -95,6 +120,55 @@ public class GTDCLI {
         if (configFile.exists())
             config = new ConfigSlurper().parse(configFile.toURL())
 
+        /// Setup logging
+        LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory()
+        lc.reset()
+
+        thresholdFilter = new ThresholdFilter()
+        loggingThreshold = config.defaultLoggingLevel ?: 'INFO'
+        thresholdFilter.level = loggingThreshold
+
+        infoAppender = new OutputStreamAppender()
+        otherAppender = new OutputStreamAppender()
+        PatternLayoutEncoder infoLayout = new PatternLayoutEncoder()
+        PatternLayoutEncoder otherLayout = new PatternLayoutEncoder()
+        LevelFilter acceptInfo = new LevelFilter()
+        rejectInfo = new LevelFilter()
+
+        [infoAppender, otherAppender, infoLayout, otherLayout, acceptInfo,
+         rejectInfo].each { it.context = lc }
+
+        // Setup filter and layout for INFO appender
+        infoLayout.context = lc
+        infoLayout.pattern = '%msg'
+        infoLayout.start()
+        acceptInfo.level = Level.INFO
+        acceptInfo.onMatch = FilterReply.ACCEPT
+        acceptInfo.onMismatch = FilterReply.DENY
+        acceptInfo.start()
+        infoAppender.encoder = infoLayout
+        infoAppender.outputStream = System.out
+        infoAppender.addFilter(acceptInfo)
+        infoAppender.start()
+
+        // Setup filters and layout for non-INFO appender
+        otherLayout.context = lc
+        otherLayout.pattern = '%level -- %msg%n'
+        otherLayout.start()
+        rejectInfo.level = Level.INFO
+        rejectInfo.onMatch = FilterReply.DENY
+        rejectInfo.start()
+        thresholdFilter.start()
+        otherAppender.encoder = otherLayout
+        otherAppender.outputStream = System.err
+        otherAppender.addFilter(rejectInfo)
+        otherAppender.addFilter(thresholdFilter)
+        otherAppender.start()
+
+        log = lc.getLogger(getClass())
+        log.addAppender(infoAppender)
+        log.addAppender(otherAppender)
+
         /// Configure the terminal width
         terminalWidth = (System.getenv().COLUMNS ?: config.terminalWidth ?: 79) as int
 
@@ -111,6 +185,8 @@ public class GTDCLI {
       * @org gtd.jdb-labs.com/cli/GTDCLI/run */
     protected void run(String[] args) {
         
+        log.debug("Args: $args")
+
         /// Simple CLI options:
         def cliDefinition = [
             /// -h, --help
@@ -137,18 +213,23 @@ public class GTDCLI {
         /// [3]: http://docs.oracle.com/javase/6/docs/api/java/util/LinkedList.html#poll()
         def parsedArgs = (opts.args as List) as LinkedList
 
+        log.debug("Parsed args: ${parsedArgs}")
+
         if (parsedArgs.size() < 1) printUsage()
 
         /// Make sure we are in a GTD directory.
         gtdDirs = findGtdRootDir(workingDir)
+        log.debug("gtdDirs:$EOL\t${gtdDirs}")
+
         if (!gtdDirs) {
-            println "fatal: '${workingDir.canonicalPath}'"
-            println "       is not a GTD repository (or any of the parent directories)."
+            log.error "fatal: '${workingDir.canonicalPath}'"
+            log.error "       is not a GTD repository (or any of the parent directories)."
             return }
 
         while (parsedArgs.peek()) {
             /// Pull off the first argument.
             def command = parsedArgs.poll()
+            log.trace("Processing command: ${command}")
 
             /// Match the first argument and invoke the proper command method.
             switch (command.toLowerCase()) {
@@ -160,8 +241,9 @@ public class GTDCLI {
                 case ~/new/: newAction(parsedArgs); break
                 case ~/tickler/: tickler(parsedArgs); break
                 case ~/ls|list/: ls(parsedArgs); break;
+                case ~/debug/: debug(parsedArgs); break;
                 default: 
-                    println "Unrecognized command: ${command}"
+                    log.error "Unrecognized command: ${command}"
                     break } } }
 
     /** #### `process`
@@ -176,7 +258,7 @@ public class GTDCLI {
         if (path) {
             def givenDir = new File(path)
             if (!(gtdDirs = findGtdRootDir(givenDir))) {
-                println "'$path' is not a valid directory."; return }}
+                log.error "'$path' is not a valid directory."; return }}
 
         /// Start processing items
         gtdDirs.in.listFiles().collect { new Item(it) }.each { item ->
@@ -270,7 +352,7 @@ public class GTDCLI {
                             "Next action (who needs to do what).", ""])
 
                         item.file = new File(promptContext(gtdDirs.waiting),
-                                             stringToFilename(item.action)) }
+                                             stringToFilename(item.toString())) }
 
 
                     /// Defer, move to the *next-actions* folder.
@@ -278,7 +360,7 @@ public class GTDCLI {
                         item.action = prompt(["Next action.", ""])
 
                         item.file = new File(promptContext(gtdDirs["next-actions"]),
-                                             stringToFilename(item.action)) }
+                                             stringToFilename(item.toString())) }
 
                     /// Forget for now, move it to the *tickler* folder.
                     else {
@@ -288,7 +370,7 @@ public class GTDCLI {
                             "(YYYY-MM-DD)"])
 
                         item.file = new File(gtdDirs.tickler,
-                                             stringToFilename(item.action)) }
+                                             stringToFilename(item.toString())) }
                         
                     item.save()
                     oldFile.delete()
@@ -303,7 +385,7 @@ public class GTDCLI {
                     if (item.project && projectDir.exists() &&
                         projectDir.isDirectory()) {
                         item.file = new File(projectDir,
-                                             stringToFilename(item.action))
+                                             stringToFilename(item.toString()))
                         item.save()
                         println "Copied to " +
                             getRelativePath(gtdDirs.root, item.file.parentFile) } } } } }
@@ -320,20 +402,22 @@ public class GTDCLI {
         def selectedFilePath = args.poll()
 
         if (!selectedFilePath) {
-            println "gtd done command requires a <action-file> parameter."
+            log.error "gtd done command requires a <action-file> parameter."
             return }
 
         while (selectedFilePath) {
             def item
             def selectedFile = new File(selectedFilePath)
 
+            if (!selectedFile.isAbsolute())
+                selectedFile = new File(workingDir, selectedFilePath)
+
             if (!selectedFile.exists() || !selectedFile.isFile()) {
-                println "File does not exist or is a directory:"
-                println "\t" + selectedFile.canonicalPath
+                log.error "File does not exist or is a directory:"
+                log.error "\t" + selectedFile.canonicalPath
                 continue }
 
-            if (selectedFile.isAbsolute()) item = new Item(selectedFile)
-            else item = new Item(new File(workingDir, selectedFilePath))
+            item = new Item(selectedFile)
 
             /// Move to the done folder.
             def oldFile = item.file
@@ -348,13 +432,13 @@ public class GTDCLI {
                 findAllCopies(oldFile, gtdDirs."next-actions").each { file ->
                     println "Deleting duplicate entry from the " +
                             "${file.parentFile.name} context."
-                    file.delete() }
+                    if (file.exists()) file.delete() }
 
                 /// Delete any copies of this item from the waiting folder.
                 findAllCopies(oldFile, gtdDirs.waiting).each { file ->
                     println "Deleting duplicate entry from the " +
                         "${file.parentFile.name} waiting context."
-                    file.delete() }}
+                    if (file.exists()) file.delete() }}
 
             /// Check if this item was in the next-action or waiting folder.
             if (inPath(gtdDirs["next-actions"], oldFile) ||
@@ -364,7 +448,7 @@ public class GTDCLI {
                 findAllCopies(oldFile, gtdDirs.projects).each { file ->
                     println "Deleting duplicate entry from the " +
                         "${file.parentFile.name} project."
-                    file.delete() }}
+                    if (file.exists()) file.delete() }}
 
             /// Delete the original
             oldFile.delete()
@@ -432,7 +516,7 @@ public class GTDCLI {
             if (!file.isAbsolute()) file = new File(workingDir, filePath)
 
             if (!file.isFile()) {
-                println "${file.canonicalPath} is not a regular file."
+                log.error "${file.canonicalPath} is not a regular file."
                 return }
 
             String originalRelativePath = getRelativePath(gtdDirs.root, file)
@@ -490,7 +574,7 @@ public class GTDCLI {
         /// exists, copy the item there.
         def projectDir = new File(gtdDirs.projects, item.project ?: '')
         if (item.project && projectDir.exists() && projectDir.isDirectory()) {
-            item.file = new File(projectDir, stringToFilename(item.action))
+            item.file = new File(projectDir, stringToFilename(item.toString()))
             item.save()
             println "Copied to " +
                 getRelativePath(gtdDirs.root, item.file.parentFile) } }
@@ -512,10 +596,10 @@ public class GTDCLI {
             /// If the item is scheduled to be tickled today (or in the past)
             /// then move it into the next-actions folder
             if ((item.tickle as DateMidnight) <= today) {
-                println "Moving '${item.action}' out of the tickler."
+                println "Moving '${item}' out of the tickler."
                 def oldFile = item.file
                 item.file = new File(gtdDirs."next-actions",
-                                     stringToFilename(item.action))
+                                     stringToFilename(item.toString()))
                 item.gtdProperties.remove("tickle")
                 item.save()
                 oldFile.delete() }}}
@@ -543,7 +627,7 @@ public class GTDCLI {
                     return
 
                 def item = new Item(file)
-                println item.action }
+                println item}
 
             println "" }
 
@@ -562,6 +646,44 @@ public class GTDCLI {
             printItems(gtdDirs['waiting'])
             gtdDirs['next-actions'].eachDir(printItems)
             gtdDirs['waiting'].eachDir(printItems) } }
+
+    /** #### `debug`
+      * Print out debug information. Currently this prints out the internal
+      * state of the CLI. I may add other subcommands if the need arises. */
+    protected void debug(LinkedList args) {
+
+        def command = args.poll()
+
+        if (!command || "state" == command) {
+            println "GTD CLI v${VERSION}"
+            println ""
+            println "-- General"
+            println "   Running under nailgun?  ${nailgunInst ? 'yes' : 'no'}"
+            println "   Terminal width          ${terminalWidth}"
+            println "   Working directory       ${workingDir.canonicalPath}"
+            println ""
+            println "-- GTD Directories"
+            gtdDirs.each { k, v -> println "   ${k.padRight(12)} ${v.canonicalPath}" }
+            println ""
+            println "-- Logging"
+            println "   Threshold   ${loggingThreshold}"
+            log.trace "   Message from TRACE"
+            log.debug "   Message from DEBUG"
+            log.info "            Message from INFO${EOL}"
+            log.warn "    Message from WARN"
+            log.error "   Message from ERROR" }
+
+        else if ("loglevel" == command) {
+            def level = args.poll()
+
+            if (!level)
+                log.error "debug loglevel command requires additional arguments."
+
+            else setLoggingThreshold(level) }
+        else log.error "Unrecognized debug command: '${command}'." }
+
+    private void print(String msg) { log.info(msg) }
+    private void println(String line) { log.info(line + EOL) }
 
     /** #### `help`
       * Implement the `help` command which provides the online-help. Users can
@@ -737,6 +859,7 @@ context or project is named, all contexts are listed."""
         contextFile = line ? new File(baseDir, line) : baseDir
 
         while (!contextFile.exists() || !contextFile.isDirectory()) {
+            log.warn "'$line' is not a valid context."
             println "Available contexts:"
             baseDir.eachDir { print "\t${it.name}"}
             println ""
