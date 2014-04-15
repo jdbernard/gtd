@@ -9,7 +9,7 @@
 
         <init-param>
             <param-name>gtdRootDir</param-name>
-            <param-value>/home/jdbernard/Dropbox/gtd</param-value>
+            <param-value>/home/jdbernard/gtd</param-value>
         </init-param>
     </servlet>
 
