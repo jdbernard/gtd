@@ -681,6 +681,15 @@ public class GTDCLI {
             else setLoggingThreshold(level) }
         else log.error "Unrecognized debug command: '${command}'." }
 
+    /** #### `delegate`
+      * Implement the `delegate` command. This allows you to move an action
+      * from the next action list to the delegate list, providing the name of
+      * the responsible party and optionally renaming the item. For detailed
+      * information see the [online help][help-delegate] by running
+      * `gtd help delegate`.
+      *
+      * [help-delegate]: jlp://gtd.jdb-labs.com/cli/GTDCLI/help/delegate 
+      */
     protected void delegateAction(LinkedList args) {
         def selectedFilePath
 
@@ -926,6 +935,16 @@ This command lists all the tasks for a given context or project. The purpose is
 to list in one place items that are sitting in the next-actions folder or the
 waiting folder for a specific context or list items for a given project. If no
 context or project is named, all contexts are listed."""
+
+                /// Online help for the `delegate` command.
+                /// @org gtd.jdb-labs.com/cli/GTDCLI/help/delegate
+                case ~/delegate/: println """\
+usage gtd delegate [<action-file> ...]
+
+This command moves an action item from a next-action context or project folder
+to the delegate folder. It allows the user to attach the name of the newly
+responsible party and optionally rename the item."""
+
             }
         }
     }
