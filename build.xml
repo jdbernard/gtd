@@ -8,6 +8,16 @@
         <mkdir dir="${build.dir}/main/classes"/>
     </target>
 
+    <target name="jlp-docs">
+        <exec executable="jlp">
+            <arg value="--no-source"/>
+            <arg value="--output-dir"/>
+            <arg value="doc"/>
+            <arg value="src"/>
+            <arg value="README.md"/>
+        </exec>
+    </target>
+
     <target name="ng-deploy" depends="build">
         <!-- Stop the Nailgun Server -->
         <exec executable="cmd" os="Windows XP">
