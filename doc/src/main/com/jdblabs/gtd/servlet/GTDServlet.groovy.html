@@ -132,7 +132,7 @@ public class GTDServlet extends HttpServlet {
 <td class="code"><pre class="brush: groovy;">        HttpSession session = request.getSession(true);
 
 </pre></td></tr><tr>
-<td class="docs"><p>If the user is posting to <code>/gtd/login</code> then let's try to authenticate them. We don't care about the state of the existing session.</p></td>
+<td class="docs"><p>If the user is posting to <code>/login</code> then let's try to authenticate them. We don't care about the state of the existing session.</p></td>
 <td class="code"><pre class="brush: groovy;">        if (request.servletPath == '/login') {
 </pre></td></tr><tr>
 <td class="docs"><p>Parse the username/password from the request.</p></td>
@@ -173,8 +173,8 @@ public class GTDServlet extends HttpServlet {
 </pre></td></tr><tr>
 <td class="docs"><p>Right now there is no other endpoint that supports <code>POST</code>, so return <code>404 Not Found</code> or <code>405 Method Not Allowed</code></p></td>
 <td class="code"><pre class="brush: groovy;">        switch (request.servletPath) {
-            case ~/\/gtd\/contexts.*/: 
-            case ~/\/gtd\/projects.*/: 
+            case ~/\/contexts.*/: 
+            case ~/\/projects.*/: 
                 response.status = SC_METHOD_NOT_ALLOWED
                 return
             default:
@@ -222,14 +222,14 @@ public class GTDServlet extends HttpServlet {
         switch(request.servletPath) {
 
 </pre></td></tr><tr>
-<td class="docs"><p>If they are invoking <code>/gtd/logout</code> then invalidate their session and return <code>200 OK</code></p></td>
+<td class="docs"><p>If they are invoking <code>/logout</code> then invalidate their session and return <code>200 OK</code></p></td>
 <td class="code"><pre class="brush: groovy;">            case &quot;/logout&quot;:
                 session.removeAttribute(&quot;authenticated&quot;)
                 session.invalidate()
                 break
 
 </pre></td></tr><tr>
-<td class="docs"><h5><code>/gtd/contexts</code></h5><p>Return the list of contexts that are readable by this user.</p></td>
+<td class="docs"><h5><code>/contexts</code></h5><p>Return the list of contexts that are readable by this user.</p></td>
 <td class="code"><pre class="brush: groovy;">            case &quot;/contexts&quot;:
 
 </pre></td></tr><tr>
@@ -246,7 +246,7 @@ public class GTDServlet extends HttpServlet {
                 break
 
 </pre></td></tr><tr>
-<td class="docs"><h5><code>/gtd/contexts/&lt;contextId&gt;</code></h5><p>Return data for the requested context, assuming it is readable for this user.</p></td>
+<td class="docs"><h5><code>/contexts/&lt;contextId&gt;</code></h5><p>Return data for the requested context, assuming it is readable for this user.</p></td>
 <td class="code"><pre class="brush: groovy;">            case ~'/contexts/(.+)':
                 String contextId = Matcher.lastMatcher[0][1]
 
@@ -268,7 +268,7 @@ public class GTDServlet extends HttpServlet {
                 break
 
 </pre></td></tr><tr>
-<td class="docs"><h5><code>/gtd/projects</code></h5><p>Return the list of projects that are readable for this user.</p></td>
+<td class="docs"><h5><code>/projects</code></h5><p>Return the list of projects that are readable for this user.</p></td>
 <td class="code"><pre class="brush: groovy;">            case &quot;/projects&quot;:
 </pre></td></tr><tr>
 <td class="docs"><p>Filter the project directories to find the ones that the user has read access to.</p></td>
@@ -281,7 +281,7 @@ public class GTDServlet extends HttpServlet {
                 break
 
 </pre></td></tr><tr>
-<td class="docs"><h5><code>/gtd/projects/&lt;projectId&gt;</code></h5><p>Return data for the requested project, assuming it is readable for this user.</p></td>
+<td class="docs"><h5><code>/projects/&lt;projectId&gt;</code></h5><p>Return data for the requested project, assuming it is readable for this user.</p></td>
 <td class="code"><pre class="brush: groovy;">            case ~'/projects/(.+)':
                 String projectId = Matcher.lastMatcher[0][1]
 
@@ -305,7 +305,7 @@ public class GTDServlet extends HttpServlet {
                 break
 
 </pre></td></tr><tr>
-<td class="docs"><h5><code>/gtd/next-actions/&lt;contexts-and-projects&gt;</code></h5><p>Return all of the items contained in the named contexts and projects, assuming the user has access to them. <code>&lt;contexts-and-projects&gt;</code> is expected to be a comma-delimited list of context and project IDs.</p></td>
+<td class="docs"><h5><code>/next-actions/&lt;contexts-and-projects&gt;</code></h5><p>Return all of the items contained in the named contexts and projects, assuming the user has access to them. <code>&lt;contexts-and-projects&gt;</code> is expected to be a comma-delimited list of context and project IDs.</p></td>
 <td class="code"><pre class="brush: groovy;">            case ~'/next-actions/(.+)':
 </pre></td></tr><tr>
 <td class="docs"><p>Parse out the list of contexts/projects</p></td>

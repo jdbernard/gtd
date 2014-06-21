@@ -58,8 +58,8 @@ public class Util {
 <td class="docs"><h3><code>inPath</code></h3><p>Determine whether or not a given path is a subpath of a given parent path. This algorithm does not consider symlinks or hard links. It operates based on the textual path names. </p></td>
 <td class="code"><pre class="brush: groovy;">
     public static boolean inPath(File parent, File child) {
-        def parentPath = parent.canonicalPath.split(&quot;/&quot;)
-        def childPath = child.canonicalPath.split(&quot;/&quot;)
+        def parentPath = parent.canonicalPath.split(&quot;[\\\\/]&quot;)
+        def childPath = child.canonicalPath.split(&quot;[\\\\/]&quot;)
 
 </pre></td></tr><tr>
 <td class="docs"><p>If the parent path is longer than the child path it cannot contain the child path.</p></td>
@@ -78,8 +78,8 @@ public class Util {
 <td class="docs"><h3><code>getRelativePath</code></h3><p>Given a parent path and a child path, assuming the child path is contained within the parent path, return the relative path from the parent to the child. </p></td>
 <td class="code"><pre class="brush: groovy;">
     public static String getRelativePath(File parent, File child) {
-        def parentPath = parent.canonicalPath.split(&quot;/&quot;)
-        def childPath = child.canonicalPath.split(&quot;/&quot;)
+        def parentPath = parent.canonicalPath.split(&quot;[\\\\/]&quot;)
+        def childPath = child.canonicalPath.split(&quot;[\\\\/]&quot;)
 
 </pre></td></tr><tr>
 <td class="docs"><p>If the parent path is longer it cannot contain the child path and we cannot construct a relative path without backtracking.</p></td>

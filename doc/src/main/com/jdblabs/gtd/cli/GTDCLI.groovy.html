@@ -32,6 +32,14 @@
 <td class="code"><pre class="brush: groovy;">
 package com.jdblabs.gtd.cli
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.LoggerContext
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder
+import ch.qos.logback.classic.filter.LevelFilter
+import ch.qos.logback.classic.filter.ThresholdFilter
+import ch.qos.logback.core.OutputStreamAppender
+import ch.qos.logback.core.spi.FilterReply
 import com.jdblabs.gtd.Item
 import com.jdblabs.gtd.PropertyHelp
 import com.jdbernard.util.LightOptionParser
@@ -39,8 +47,8 @@ import com.martiansoftware.nailgun.NGContext
 import java.security.MessageDigest
 import org.joda.time.DateMidnight
 import org.joda.time.DateTime
-//import org.slf4j.Logger
-//import org.slf4j.LoggerFactory
+import org.slf4j.Logger as SFL4JLogger
+import org.slf4j.LoggerFactory
 
 import static com.jdblabs.gtd.Util.*
 
@@ -50,7 +58,7 @@ import static com.jdblabs.gtd.Util.*
 <td class="code"><pre class="brush: groovy;">
 public class GTDCLI {
 
-    public static final String VERSION = &quot;1.2&quot;
+    public static final String VERSION = &quot;1.9&quot;
     private static String EOL = System.getProperty(&quot;line.separator&quot;)
 
 </pre></td></tr><tr>
@@ -68,7 +76,22 @@ public class GTDCLI {
 <td class="docs"><p>The <a href="../Util.groovy.html#gtd.jdb-labs.com/notes/root-directory-map">GTD Root Directory map</a> for our repository.</p></td>
 <td class="code"><pre class="brush: groovy;">    private Map&lt;String, File&gt; gtdDirs
 
-    //private Logger log = LoggerFactory.getLogger(getClass())
+</pre></td></tr><tr>
+<td class="docs"><p>Logging objects</p></td>
+<td class="code"><pre class="brush: groovy;">    private Logger log
+    private OutputStreamAppender otherAppender
+    private OutputStreamAppender infoAppender
+    private ThresholdFilter thresholdFilter
+    private LevelFilter rejectInfo
+    private String loggingThreshold
+
+    public void setLoggingThreshold(String level) {
+        if (thresholdFilter) {
+            System.out.println &quot;Changing logging level to $level&quot;
+            thresholdFilter.stop()
+            thresholdFilter.level = level
+            thresholdFilter.start() }
+        this.loggingThreshold = level }
     </pre></td></tr><tr>
 <td class="docs"><h3><code>main</code></h3><p>Main entry point for a normal GTD CLI process. </p></td>
 <td class="code"><pre class="brush: groovy;">
@@ -81,15 +104,17 @@ public class GTDCLI {
 </pre></td></tr><tr>
 <td class="docs"><p>Actual processing is done by the <a href="#gtd.jdb-labs.com/cli/GTDCLI/run"><code>run</code></a> method</p></td>
 <td class="code"><pre class="brush: groovy;">        if (args.length &gt; 0) args[-1] = args[-1].trim()
+
         inst.run(args) }
     </pre></td></tr><tr>
 <td class="docs"><h3><code>nailMain</code></h3><p>Entry point for a GTD CLI process under [Nailgun][ng]. [ng]: http://www.martiansoftware.com/nailgun/ </p></td>
 <td class="code"><pre class="brush: groovy;">
     public static void nailMain(NGContext context) {
-        if (nailgunInst == null)
+
+        if (nailgunInst == null) {
             nailgunInst = new GTDCLI(new File(
-                System.getProperty(&quot;user.home&quot;), &quot;.gtdclirc&quot;))
-        else nailgunInst.stdin = new Scanner(context.in)
+                System.getProperty(&quot;user.home&quot;), &quot;.gtdclirc&quot;)) }
+        else { nailgunInst.stdin = new Scanner(context.in) }
 
 </pre></td></tr><tr>
 <td class="docs"><p>Trim the last argument; not all cli's are well-behaved</p></td>
@@ -100,6 +125,7 @@ public class GTDCLI {
 <td class="docs"><h3><code>reconfigure</code></h3><p>This method reloads the configuration before invoking the run function, allowing a long-lived instance to react to configuration changes. </p></td>
 <td class="code"><pre class="brush: groovy;">
     public static void reconfigure(String[] args) {
+
 </pre></td></tr><tr>
 <td class="docs"><p>If we do not have a long-running Nailgun instance we just call main.</p></td>
 <td class="code"><pre class="brush: groovy;">        if (nailgunInst == null) main(args)
@@ -123,6 +149,56 @@ public class GTDCLI {
             config = new ConfigSlurper().parse(configFile.toURL())
 
 </pre></td></tr><tr>
+<td class="docs"><p>Setup logging</p></td>
+<td class="code"><pre class="brush: groovy;">        LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory()
+        lc.reset()
+
+        thresholdFilter = new ThresholdFilter()
+        loggingThreshold = config.defaultLoggingLevel ?: 'INFO'
+        thresholdFilter.level = loggingThreshold
+
+        infoAppender = new OutputStreamAppender()
+        otherAppender = new OutputStreamAppender()
+        PatternLayoutEncoder infoLayout = new PatternLayoutEncoder()
+        PatternLayoutEncoder otherLayout = new PatternLayoutEncoder()
+        LevelFilter acceptInfo = new LevelFilter()
+        rejectInfo = new LevelFilter()
+
+        [infoAppender, otherAppender, infoLayout, otherLayout, acceptInfo,
+         rejectInfo].each { it.context = lc }
+
+        // Setup filter and layout for INFO appender
+        infoLayout.context = lc
+        infoLayout.pattern = '%msg'
+        infoLayout.start()
+        acceptInfo.level = Level.INFO
+        acceptInfo.onMatch = FilterReply.ACCEPT
+        acceptInfo.onMismatch = FilterReply.DENY
+        acceptInfo.start()
+        infoAppender.encoder = infoLayout
+        infoAppender.outputStream = System.out
+        infoAppender.addFilter(acceptInfo)
+        infoAppender.start()
+
+        // Setup filters and layout for non-INFO appender
+        otherLayout.context = lc
+        otherLayout.pattern = '%level -- %msg%n'
+        otherLayout.start()
+        rejectInfo.level = Level.INFO
+        rejectInfo.onMatch = FilterReply.DENY
+        rejectInfo.start()
+        thresholdFilter.start()
+        otherAppender.encoder = otherLayout
+        otherAppender.outputStream = System.err
+        otherAppender.addFilter(rejectInfo)
+        otherAppender.addFilter(thresholdFilter)
+        otherAppender.start()
+
+        log = lc.getLogger(getClass())
+        log.addAppender(infoAppender)
+        log.addAppender(otherAppender)
+
+</pre></td></tr><tr>
 <td class="docs"><p>Configure the terminal width</p></td>
 <td class="code"><pre class="brush: groovy;">        terminalWidth = (System.getenv().COLUMNS ?: config.terminalWidth ?: 79) as int
 
@@ -139,6 +215,8 @@ public class GTDCLI {
 <td class="code"><pre class="brush: groovy;">
     protected void run(String[] args) {
         
+        log.debug(&quot;Args: $args&quot;)
+
 </pre></td></tr><tr>
 <td class="docs"><p>Simple CLI options:</p></td>
 <td class="code"><pre class="brush: groovy;">        def cliDefinition = [
@@ -165,20 +243,25 @@ public class GTDCLI {
 <td class="docs"><p>View the arguments as a <a href="http://docs.oracle.com/javase/6/docs/api/java/util/LinkedList.html"><code>LinkedList</code></a> so we can use <a href="http://docs.oracle.com/javase/6/docs/api/java/util/LinkedList.html#peek()"><code>peek</code></a> and <a href="http://docs.oracle.com/javase/6/docs/api/java/util/LinkedList.html#poll()"><code>poll</code></a>.</p></td>
 <td class="code"><pre class="brush: groovy;">        def parsedArgs = (opts.args as List) as LinkedList
 
+        log.debug(&quot;Parsed args: ${parsedArgs}&quot;)
+
         if (parsedArgs.size() &lt; 1) printUsage()
 
 </pre></td></tr><tr>
 <td class="docs"><p>Make sure we are in a GTD directory.</p></td>
 <td class="code"><pre class="brush: groovy;">        gtdDirs = findGtdRootDir(workingDir)
+        log.debug(&quot;gtdDirs:$EOL\t${gtdDirs}&quot;)
+
         if (!gtdDirs) {
-            println &quot;fatal: '${workingDir.canonicalPath}'&quot;
-            println &quot;       is not a GTD repository (or any of the parent directories).&quot;
+            log.error &quot;fatal: '${workingDir.canonicalPath}'&quot;
+            log.error &quot;       is not a GTD repository (or any of the parent directories).&quot;
             return }
 
         while (parsedArgs.peek()) {
 </pre></td></tr><tr>
 <td class="docs"><p>Pull off the first argument.</p></td>
 <td class="code"><pre class="brush: groovy;">            def command = parsedArgs.poll()
+            log.trace(&quot;Processing command: ${command}&quot;)
 
 </pre></td></tr><tr>
 <td class="docs"><p>Match the first argument and invoke the proper command method.</p></td>
@@ -191,8 +274,10 @@ public class GTDCLI {
                 case ~/new/: newAction(parsedArgs); break
                 case ~/tickler/: tickler(parsedArgs); break
                 case ~/ls|list/: ls(parsedArgs); break;
+                case ~/debug/: debug(parsedArgs); break;
+                case ~/delegate/: delegateAction(parsedArgs); break;
                 default: 
-                    println &quot;Unrecognized command: ${command}&quot;
+                    log.error &quot;Unrecognized command: ${command}&quot;
                     break } } }
     </pre></td></tr><tr>
 <td class="docs"><h3><code>process</code></h3><p>Implement the <em>process</em> step of the GTD method. For details, see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/process">online help</a> included by running <code>gtd help process</code></p></td>
@@ -203,7 +288,7 @@ public class GTDCLI {
         if (path) {
             def givenDir = new File(path)
             if (!(gtdDirs = findGtdRootDir(givenDir))) {
-                println &quot;'$path' is not a valid directory.&quot;; return }}
+                log.error &quot;'$path' is not a valid directory.&quot;; return }}
 
 </pre></td></tr><tr>
 <td class="docs"><p>Start processing items</p></td>
@@ -212,6 +297,7 @@ public class GTDCLI {
             println &quot;&quot;
             def response
             def readline = {stdin.nextLine().trim()}
+            def oldFile = item.file
 
 </pre></td></tr><tr>
 <td class="docs"><ol>
@@ -243,7 +329,6 @@ public class GTDCLI {
                             PropertyHelp.parse(parts[1].trim())
                         print &quot;&gt; &quot; }
 
-                    def oldFile = item.file
                     item.file = new File(gtdDirs.incubate, item.file.name)
                     item.save()
                     oldFile.delete() }
@@ -260,7 +345,6 @@ public class GTDCLI {
                     readline();
 
                     def date = new DateMidnight().toString(&quot;YYYY-MM-dd&quot;)
-                    def oldFile = item.file
                     item.file = new File(gtdDirs.done, &quot;$date-${item.file.name}&quot;)
                     item.save()
                     oldFile.delete()
@@ -289,7 +373,6 @@ public class GTDCLI {
 </pre></td></tr><tr>
 <td class="docs"><p>Yes, this deserves it's own project folder.</p></td>
 <td class="code"><pre class="brush: groovy;">                if (response ==~ /yes|y/) {
-                    def oldFile = item.file
                     item.file = new File(gtdDirs.projects,
                                          stringToFilename(item.outcome))
                     item.save()
@@ -307,103 +390,115 @@ public class GTDCLI {
 <td class="code"><pre class="brush: groovy;">                    if (response =~ /del/) {
 
                         item.action = prompt([
-                            &quot;Next action (who needs to do what).&quot;, &quot;&quot;])
+                            &quot;Next action (who needs to do what)?&quot;, &quot;&quot;])
 
-                        def oldFile = item.file
-                        item.file = new File(gtdDirs.waiting,
-                                             stringToFilename(item.action))
-                        item.save()
-                        oldFile.delete()
-
-                        println &quot;Moved to ${gtdDirs.waiting.name} folder.&quot; }
+                        item.file = new File(promptContext(gtdDirs.waiting),
+                                             stringToFilename(item.toString())) }
 
 
 </pre></td></tr><tr>
-<td class="docs"><p>Defer, move to teh <em>next-actions</em> folder.</p></td>
+<td class="docs"><p>Defer, move to the <em>next-actions</em> folder.</p></td>
 <td class="code"><pre class="brush: groovy;">                    else if (response =~ /def/) {
-                        item.action = prompt([&quot;Next action.&quot;, &quot;&quot;])
+                        item.action = prompt([&quot;Next action?&quot;, &quot;&quot;])
 
-                        def oldFile = item.file
-                        item.file = new File(gtdDirs[&quot;next-actions&quot;],
-                                             stringToFilename(item.action))
-                        item.save()
-                        oldFile.delete()
-
-                        println &quot;Moved to the ${gtdDirs['next-actions'].name} folder.&quot;
-                    }
+                        item.file = new File(promptContext(gtdDirs[&quot;next-actions&quot;]),
+                                             stringToFilename(item.toString())) }
 
 </pre></td></tr><tr>
 <td class="docs"><p>Forget for now, move it to the <em>tickler</em> folder.</p></td>
 <td class="code"><pre class="brush: groovy;">                    else {
-                        item.action = prompt([&quot;Next action.&quot;, &quot;&quot;])
+                        item.action = prompt([&quot;Next action?&quot;, &quot;&quot;])
                         item.tickle = prompt([
                             &quot;When do you want it to become active?&quot;,
                             &quot;(YYYY-MM-DD)&quot;])
 
-                        def oldFile = item.file
                         item.file = new File(gtdDirs.tickler,
-                                             stringToFilename(item.action))
+                                             stringToFilename(item.toString())) }
+                        
+                    item.save()
+                    oldFile.delete()
+
+                    println &quot;Moved to &quot; +
+                        getRelativePath(gtdDirs.root, item.file.parentFile)
+                        
+</pre></td></tr><tr>
+<td class="docs"><p>If we have a project property, and a corresponding project folder exists, copy the item there.</p></td>
+<td class="code"><pre class="brush: groovy;">                    def projectDir = new File(gtdDirs.projects,
+                                              item.project ?: '')
+                    if (item.project &amp;&amp; projectDir.exists() &amp;&amp;
+                        projectDir.isDirectory()) {
+                        item.file = new File(projectDir,
+                                             stringToFilename(item.toString()))
                         item.save()
-                        oldFile.delete()
-                        println &quot;Moved to the ${gtdDirs.tickler.name} folder.&quot; } } } } }
+                        println &quot;Copied to &quot; +
+                            getRelativePath(gtdDirs.root, item.file.parentFile) } } } } }
     </pre></td></tr><tr>
 <td class="docs"><h3><code>done</code></h3><p>Implement the <code>done</code> command to mark items as completed. For detailed information see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/done">online help</a> by running <code>gtd help done</code>.</p></td>
 <td class="code"><pre class="brush: groovy;">
     protected void done(LinkedList args) {
 
-        def selectedFilePath = args.poll()
-        def selectedFile = new File(selectedFilePath)
+        def selectedFilePath
 
-        if (!selectedFile) {
-            println &quot;gtd done command requires a &lt;action-file&gt; parameter.&quot;
+        if (!args) {
+            log.error &quot;The 'gtd done' command requires an &lt;action-file&gt; parameter.&quot;
             return }
 
-        def item
-        if (selectedFile.isAbsolute()) item = new Item(selectedFile)
-        else item = new Item(new File(workingDir, selectedFilePath))
+        while ((selectedFilePath = args.poll())) {
+            def item
+            def selectedFile = new File(selectedFilePath)
+
+            if (!selectedFile.isAbsolute())
+                selectedFile = new File(workingDir, selectedFilePath)
+
+            if (!selectedFile.exists() || !selectedFile.isFile()) {
+                log.error &quot;File does not exist or is a directory:&quot;
+                log.error &quot;\t&quot; + selectedFile.canonicalPath
+                continue }
+
+            item = new Item(selectedFile)
 
 </pre></td></tr><tr>
 <td class="docs"><p>Move to the done folder.</p></td>
-<td class="code"><pre class="brush: groovy;">        def oldFile = item.file
-        def date = new DateMidnight().toString(&quot;YYYY-MM-dd&quot;)
-        item.file = new File(gtdDirs.done, &quot;$date-${item.file.name}&quot;)
-        item.save()
+<td class="code"><pre class="brush: groovy;">            def oldFile = item.file
+            def date = new DateMidnight().toString(&quot;YYYY-MM-dd&quot;)
+            item.file = new File(gtdDirs.done, &quot;$date-${item.file.name}&quot;)
+            item.save()
 
 </pre></td></tr><tr>
 <td class="docs"><p>Check if this item was in a project folder.</p></td>
-<td class="code"><pre class="brush: groovy;">        if (inPath(gtdDirs.projects, oldFile)) {
+<td class="code"><pre class="brush: groovy;">            if (inPath(gtdDirs.projects, oldFile)) {
 
 </pre></td></tr><tr>
 <td class="docs"><p>Delete any copies of this item from the next actions folder.</p></td>
-<td class="code"><pre class="brush: groovy;">            findAllCopies(oldFile, gtdDirs.&quot;next-actions&quot;).each { file -&gt;
-                println &quot;Deleting duplicate entry from the &quot; +
-                        &quot;${file.parentFile.name} context.&quot;
-                file.delete() }
+<td class="code"><pre class="brush: groovy;">                findAllCopies(oldFile, gtdDirs[&quot;next-actions&quot;]).each { file -&gt;
+                    println &quot;Deleting duplicate entry from the &quot; +
+                            &quot;${file.parentFile.name} context.&quot;
+                    if (file.exists()) file.delete() }
 
 </pre></td></tr><tr>
 <td class="docs"><p>Delete any copies of this item from the waiting folder.</p></td>
-<td class="code"><pre class="brush: groovy;">            findAllCopies(oldFile, gtdDirs.waiting).each { file -&gt;
-                println &quot;Deleting duplicate entry from the &quot; +
-                    &quot;${file.parentFile.name} waiting context.&quot;
-                file.delete() }}
+<td class="code"><pre class="brush: groovy;">                findAllCopies(oldFile, gtdDirs.waiting).each { file -&gt;
+                    println &quot;Deleting duplicate entry from the &quot; +
+                        &quot;${file.parentFile.name} waiting context.&quot;
+                    if (file.exists()) file.delete() }}
 
 </pre></td></tr><tr>
 <td class="docs"><p>Check if this item was in the next-action or waiting folder.</p></td>
-<td class="code"><pre class="brush: groovy;">        if (inPath(gtdDirs[&quot;next-actions&quot;], oldFile) ||
-            inPath(gtdDirs.waiting, oldFile)) {
+<td class="code"><pre class="brush: groovy;">            if (inPath(gtdDirs[&quot;next-actions&quot;], oldFile) ||
+                inPath(gtdDirs.waiting, oldFile)) {
 
 </pre></td></tr><tr>
 <td class="docs"><p>Delete any copies of this item from the projects folder.</p></td>
-<td class="code"><pre class="brush: groovy;">            findAllCopies(oldFile, gtdDirs.projects).each { file -&gt;
-                println &quot;Deleting duplicate entry from the &quot; +
-                    &quot;${file.parentFile.name} project.&quot;
-                file.delete() }}
+<td class="code"><pre class="brush: groovy;">                findAllCopies(oldFile, gtdDirs.projects).each { file -&gt;
+                    println &quot;Deleting duplicate entry from the &quot; +
+                        &quot;${file.parentFile.name} project.&quot;
+                    if (file.exists()) file.delete() }}
 
 </pre></td></tr><tr>
 <td class="docs"><p>Delete the original</p></td>
-<td class="code"><pre class="brush: groovy;">        oldFile.delete()
+<td class="code"><pre class="brush: groovy;">            oldFile.delete()
 
-        println &quot;'$item' marked as done.&quot; }
+            println &quot;'$item' marked as done.&quot; } }
     </pre></td></tr><tr>
 <td class="docs"><h3><code>calendar</code></h3><p>Implement the <code>calendar</code> command to show all the items which are scheduled on the calendar. For detailed information see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/calendar">online help</a> by running <code>gtd help calendar</code>.</p></td>
 <td class="code"><pre class="brush: groovy;">
@@ -458,7 +553,7 @@ public class GTDCLI {
             if (!file.isAbsolute()) file = new File(workingDir, filePath)
 
             if (!file.isFile()) {
-                println &quot;${file.canonicalPath} is not a regular file.&quot;
+                log.error &quot;${file.canonicalPath} is not a regular file.&quot;
                 return }
 
             String originalRelativePath = getRelativePath(gtdDirs.root, file)
@@ -506,7 +601,16 @@ public class GTDCLI {
                 PropertyHelp.parse(parts[1].trim())
             print &quot;&gt; &quot; }
 
-        item.save() }
+        item.save()
+        
+</pre></td></tr><tr>
+<td class="docs"><p>If we have a project property, and a corresponding project folder exists, copy the item there.</p></td>
+<td class="code"><pre class="brush: groovy;">        def projectDir = new File(gtdDirs.projects, item.project ?: '')
+        if (item.project &amp;&amp; projectDir.exists() &amp;&amp; projectDir.isDirectory()) {
+            item.file = new File(projectDir, stringToFilename(item.toString()))
+            item.save()
+            println &quot;Copied to &quot; +
+                getRelativePath(gtdDirs.root, item.file.parentFile) } }
     </pre></td></tr><tr>
 <td class="docs"><h3><code>tickler</code></h3><p>Implement the <code>tickler</code> command to move items in the <em>tickler</em> folder to the <em>next-actions</em> folder if their time has come. For detailed information see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/tickler">online help</a> by running <code>gtd help tickler</code>.</p></td>
 <td class="code"><pre class="brush: groovy;">
@@ -519,10 +623,10 @@ public class GTDCLI {
 </pre></td></tr><tr>
 <td class="docs"><p>If the item is scheduled to be tickled today (or in the past) then move it into the next-actions folder</p></td>
 <td class="code"><pre class="brush: groovy;">            if ((item.tickle as DateMidnight) &lt;= today) {
-                println &quot;Moving '${item.action}' out of the tickler.&quot;
+                println &quot;Moving '${item}' out of the tickler.&quot;
                 def oldFile = item.file
                 item.file = new File(gtdDirs.&quot;next-actions&quot;,
-                                     stringToFilename(item.action))
+                                     stringToFilename(item.toString()))
                 item.gtdProperties.remove(&quot;tickle&quot;)
                 item.save()
                 oldFile.delete() }}}
@@ -531,7 +635,7 @@ public class GTDCLI {
 <td class="code"><pre class="brush: groovy;">
     protected void ls(LinkedList args) {
 
-        def target = args.poll()
+        def target
 
 </pre></td></tr><tr>
 <td class="docs"><p>Temporary helper function to print all the items in a given directory.</p></td>
@@ -539,29 +643,172 @@ public class GTDCLI {
             if (!dir.exists() || !dir.isDirectory()) return
             println &quot;-- ${getRelativePath(gtdDirs.root, dir)} --&quot;
             dir.eachFile { file -&gt;
-                if (!file.exists() || !file.isFile() || file.isHidden())
+                if (!file.exists() || !file.isFile() || file.isHidden() ||
+                    file.name.startsWith('.'))
                     return
 
                 def item = new Item(file)
-                println item.action }
+                println item}
 
             println &quot;&quot; }
 
 </pre></td></tr><tr>
-<td class="docs"><p>If we have a named context or project, look for those items specifically</p></td>
-<td class="code"><pre class="brush: groovy;">        if (target) {
-
-            printItems(new File(gtdDirs['next-actions'], target))
-            printItems(new File(gtdDirs.waiting, target))
-            printItems(new File(gtdDirs.projects, target)) }
-
-</pre></td></tr><tr>
-<td class="docs"><p>Otherwise print all items in the <em>next-actions</em> and <em>waiting</em> folders and all their subfolders.</p></td>
-<td class="code"><pre class="brush: groovy;">        else {
+<td class="docs"><p>If we have no named context or project, print all items in the <em>next-actions</em> and <em>waiting</em> folders and all their subfolders.</p></td>
+<td class="code"><pre class="brush: groovy;">        if (!args) {
             printItems(gtdDirs['next-actions'])
             printItems(gtdDirs['waiting'])
             gtdDirs['next-actions'].eachDir(printItems)
-            gtdDirs['waiting'].eachDir(printItems) } }
+            gtdDirs['waiting'].eachDir(printItems) }
+
+</pre></td></tr><tr>
+<td class="docs"><p>For every name we do have, look for a project or context and recursively print their contents.</p></td>
+<td class="code"><pre class="brush: groovy;">        else while ((target = args.poll())) {
+            printItems(new File(gtdDirs['next-actions'], target))
+            printItems(new File(gtdDirs.waiting, target))
+            printItems(new File(gtdDirs.projects, target)) } }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>debug</code></h3><p>Print out debug information. Currently this prints out the internal state of the CLI. I may add other subcommands if the need arises. </p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void debug(LinkedList args) {
+
+        def command = args.poll()
+
+        if (!command || &quot;state&quot; == command) {
+            println &quot;GTD CLI v${VERSION}&quot;
+            println &quot;&quot;
+            println &quot;-- General&quot;
+            println &quot;   Running under nailgun?  ${nailgunInst ? 'yes' : 'no'}&quot;
+            println &quot;   Terminal width          ${terminalWidth}&quot;
+            println &quot;   Working directory       ${workingDir.canonicalPath}&quot;
+            println &quot;&quot;
+            println &quot;-- GTD Directories&quot;
+            gtdDirs.each { k, v -&gt; println &quot;   ${k.padRight(12)} ${v.canonicalPath}&quot; }
+            println &quot;&quot;
+            println &quot;-- Logging&quot;
+            println &quot;   Threshold   ${loggingThreshold}&quot;
+            log.trace &quot;   Message from TRACE&quot;
+            log.debug &quot;   Message from DEBUG&quot;
+            log.info &quot;            Message from INFO${EOL}&quot;
+            log.warn &quot;    Message from WARN&quot;
+            log.error &quot;   Message from ERROR&quot; }
+
+        else if (&quot;loglevel&quot; == command) {
+            def level = args.poll()
+
+            if (!level)
+                log.error &quot;debug loglevel command requires additional arguments.&quot;
+
+            else setLoggingThreshold(level) }
+        else log.error &quot;Unrecognized debug command: '${command}'.&quot; }
+    </pre></td></tr><tr>
+<td class="docs"><h3><code>delegate</code></h3><p>Implement the <code>delegate</code> command. This allows you to move an action from the next action list to the delegate list, providing the name of the responsible party and optionally renaming the item. For detailed information see the <a href="#gtd.jdb-labs.com/cli/GTDCLI/help/delegate">online help</a> by running <code>gtd help delegate</code>.</p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected void delegateAction(LinkedList args) {
+        def selectedFilePath
+
+        if (!args) {
+            log.error(&quot;The 'gtd delegate' command requires an &quot; +
+                &quot;&lt;action-file&gt; parameter.&quot;)
+            return }
+
+        while ((selectedFilePath = args.poll())) {
+            
+            Item item
+            File oldFile, newContextDir
+            File selectedFile = new File(selectedFilePath)
+
+            if (!selectedFile.isAbsolute())
+                selectedFile = new File(workingDir, selectedFilePath)
+
+            if (!selectedFile.exists() || !selectedFile.isFile()) {
+                log.error &quot;File does not exist or is a directory:&quot;
+                log.error &quot;\t&quot; + selectedFile.canonicalPath
+                continue }
+
+            item = new Item(selectedFile)
+            oldFile = item.file
+
+</pre></td></tr><tr>
+<td class="docs"><p>Move to the waiting folder, with the name of the delegatee and optionally a new next action.</p></td>
+<td class="code"><pre class="brush: groovy;">            def delegatee = prompt(
+[&quot;Who is responsible for the next action? You may also update the next action&quot;,
+ &quot;by including it after a colon (e.g. 'Delegatee Name: New next action.').&quot;,
+ &quot;&quot;])
+            
+            if (delegatee.indexOf(':') &gt; 0) item.action = delegatee
+            else item.action = delegatee + ': ' + item.action
+
+</pre></td></tr><tr>
+<td class="docs"><p>Check if this item was in a project folder.</p></td>
+<td class="code"><pre class="brush: groovy;">            if (inPath(gtdDirs.projects, oldFile)) {
+
+</pre></td></tr><tr>
+<td class="docs"><p>Rename the file in the project folder</p></td>
+<td class="code"><pre class="brush: groovy;">                item.file = new File(oldFile.parentFile,
+                    stringToFilename(item.toString()))
+                item.save()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Move any copies of this item from the next actions folder to the waiting folder.</p></td>
+<td class="code"><pre class="brush: groovy;">                findAllCopies(oldFile, gtdDirs['next-actions']).each { dupFile -&gt;
+                    println &quot;Moving duplicate entry from the &quot; +
+                            &quot;${dupFile.parentFile.name} context.&quot;
+
+</pre></td></tr><tr>
+<td class="docs"><p>Retain the item's context if possible</p></td>
+<td class="code"><pre class="brush: groovy;">                    newContextDir = new File(gtdDirs.waiting,
+                        dupFile.parentFile.name)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Instead of creating a new Item object, let's just create a copy of the existing one on the filesystem by saving the existing object to a the new location.</p></td>
+<td class="code"><pre class="brush: groovy;">                    if (newContextDir.exists() &amp;&amp; newContextDir.isDirectory()) {
+                        item.file = new File(newContextDir,
+                            stringToFilename(item.toString())) }
+
+                    else { item.file = new File(gtdDirs.waiting,
+                        stringToFilename(item.toString())) }
+
+                    item.save()
+                    dupfile.delete() }}
+                    
+</pre></td></tr><tr>
+<td class="docs"><p>Check if this item was in the next-action folder.</p></td>
+<td class="code"><pre class="brush: groovy;">            else if (inPath(gtdDirs[&quot;next-actions&quot;], oldFile) ||
+                inPath(gtdDirs.waiting, oldFile)) {
+
+</pre></td></tr><tr>
+<td class="docs"><p>Retain the item's context if possible.</p></td>
+<td class="code"><pre class="brush: groovy;">                newContextDir = new File(gtdDirs.waiting,
+                    oldFile.parentFile.name)
+
+</pre></td></tr><tr>
+<td class="docs"><p>Move the file to the waiting folder.</p></td>
+<td class="code"><pre class="brush: groovy;">                if (newContextDir.exists() &amp;&amp; newContextDir.isDirectory()) {
+                    item.file = new File(newContextDir,
+                        stringToFilename(item.toString())) }
+
+                else { item.file = new File(gtdDirs.waiting,
+                    stringToFilename(item.toString())) }
+
+                item.save()
+
+</pre></td></tr><tr>
+<td class="docs"><p>Rename any copies of this item from the projects folder.</p></td>
+<td class="code"><pre class="brush: groovy;">                findAllCopies(oldFile, gtdDirs.projects).each { dupFile -&gt;
+                    println &quot;Renaming duplicate entry from the &quot; +
+                        &quot;${dupFile.parentFile.name} project.&quot;
+                    item.file =  new File(dupFile.parentFile,
+                        stringToFilename(item.toString()))
+
+                    item.save()
+                    dupFile.delete() } }
+
+</pre></td></tr><tr>
+<td class="docs"><p>Delete the original file.</p></td>
+<td class="code"><pre class="brush: groovy;">            oldFile.delete() } }
+
+    private void print(String msg) { log.info(msg) }
+    private void println(String line) { log.info(line + EOL) }
     </pre></td></tr><tr>
 <td class="docs"><h3><code>help</code></h3><p>Implement the <code>help</code> command which provides the online-help. Users can access the online help for a command by running <code>gtd help &lt;command&gt;</code>.</p></td>
 <td class="code"><pre class="brush: groovy;">
@@ -714,6 +961,17 @@ This command lists all the tasks for a given context or project. The purpose is
 to list in one place items that are sitting in the next-actions folder or the
 waiting folder for a specific context or list items for a given project. If no
 context or project is named, all contexts are listed.&quot;&quot;&quot;
+
+</pre></td></tr>
+<tr id='gtd.jdb-labs.com/cli/GTDCLI/help/delegate'>
+<td class="docs"><p>Online help for the <code>delegate</code> command.</p></td>
+<td class="code"><pre class="brush: groovy;">                case ~/delegate/: println &quot;&quot;&quot;\
+usage gtd delegate [&lt;action-file&gt; ...]
+
+This command moves an action item from a next-action context or project folder
+to the delegate folder. It allows the user to attach the name of the newly
+responsible party and optionally rename the item.&quot;&quot;&quot;
+
             }
         }
     }
@@ -730,6 +988,28 @@ context or project is named, all contexts are listed.&quot;&quot;&quot;
         
         return line }
     </pre></td></tr><tr>
+<td class="docs"><h3><code>promptContext</code></h3><p>Prompt the user to choose a context (subdirectory of the given directory). </p></td>
+<td class="code"><pre class="brush: groovy;">
+    protected File promptContext(File baseDir) {
+        print &quot;Context?&gt; &quot;
+        def line
+        def contextFile
+
+        line = stdin.nextLine().trim()
+        contextFile = line ? new File(baseDir, line) : baseDir
+
+        while (!contextFile.exists() || !contextFile.isDirectory()) {
+            log.warn &quot;'$line' is not a valid context.&quot;
+            println &quot;Available contexts:&quot;
+            baseDir.eachDir { print &quot;\t${it.name}&quot;}
+            println &quot;&quot;
+
+            print &quot;Context?&gt; &quot;
+            line = stdin.nextLine().trim()
+            contextFile = line ? new File(baseDir, line) : baseDir }
+        
+        return contextFile }
+    </pre></td></tr><tr>
 <td class="docs"><h3><code>filenameToString</code></h3><p>The default pretty-print conversion for filenames. </p></td>
 <td class="code"><pre class="brush: groovy;">
     public static String filenameToString(File f) {
@@ -739,7 +1019,7 @@ context or project is named, all contexts are listed.&quot;&quot;&quot;
 <td class="code"><pre class="brush: groovy;">
     public static String stringToFilename(String s) {
         return s.replaceAll(/\s/, '-').
-                replaceAll(/[';:(\.$)]/, '').
+                replaceAll(/[';:(\.$\/)]/, '').
                 toLowerCase() }
 }
 
