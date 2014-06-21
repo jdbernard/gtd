@@ -5,6 +5,14 @@
  */
 package com.jdblabs.gtd.cli
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.LoggerContext
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder
+import ch.qos.logback.classic.filter.LevelFilter
+import ch.qos.logback.classic.filter.ThresholdFilter
+import ch.qos.logback.core.OutputStreamAppender
+import ch.qos.logback.core.spi.FilterReply
 import com.jdblabs.gtd.Item
 import com.jdblabs.gtd.PropertyHelp
 import com.jdbernard.util.LightOptionParser
@@ -12,8 +20,8 @@ import com.martiansoftware.nailgun.NGContext
 import java.security.MessageDigest
 import org.joda.time.DateMidnight
 import org.joda.time.DateTime
-//import org.slf4j.Logger
-//import org.slf4j.LoggerFactory
+import org.slf4j.Logger as SFL4JLogger
+import org.slf4j.LoggerFactory
 
 import static com.jdblabs.gtd.Util.*
 
@@ -23,7 +31,7 @@ import static com.jdblabs.gtd.Util.*
  * @org gtd.jdb-labs.com/cli/GTDCLI */
 public class GTDCLI {
 
-    public static final String VERSION = "1.2"
+    public static final String VERSION = "1.9"
     private static String EOL = System.getProperty("line.separator")
 
     /// We have a persistent instance when we are in the context of a Nailgun
@@ -41,7 +49,21 @@ public class GTDCLI {
     /// [root-map]: jlp://gtd.jdb-labs.com/notes/root-directory-map
     private Map<String, File> gtdDirs
 
-    //private Logger log = LoggerFactory.getLogger(getClass())
+    /// Logging objects
+    private Logger log
+    private OutputStreamAppender otherAppender
+    private OutputStreamAppender infoAppender
+    private ThresholdFilter thresholdFilter
+    private LevelFilter rejectInfo
+    private String loggingThreshold
+
+    public void setLoggingThreshold(String level) {
+        if (thresholdFilter) {
+            System.out.println "Changing logging level to $level"
+            thresholdFilter.stop()
+            thresholdFilter.level = level
+            thresholdFilter.start() }
+        this.loggingThreshold = level }
 
     /** #### `main`
       * Main entry point for a normal GTD CLI process. */
@@ -54,16 +76,18 @@ public class GTDCLI {
         /// Actual processing is done by the
         /// [`run`](jlp://gtd.jdb-labs.com/cli/GTDCLI/run) method
         if (args.length > 0) args[-1] = args[-1].trim()
+
         inst.run(args) }
 
     /** #### `nailMain`
       * Entry point for a GTD CLI process under [Nailgun][ng].
       * [ng]: http://www.martiansoftware.com/nailgun/ */
     public static void nailMain(NGContext context) {
-        if (nailgunInst == null)
+
+        if (nailgunInst == null) {
             nailgunInst = new GTDCLI(new File(
-                System.getProperty("user.home"), ".gtdclirc"))
-        else nailgunInst.stdin = new Scanner(context.in)
+                System.getProperty("user.home"), ".gtdclirc")) }
+        else { nailgunInst.stdin = new Scanner(context.in) }
 
         /// Trim the last argument; not all cli's are well-behaved
         if (context.args.length > 0) context.args[-1] = context.args[-1].trim()
@@ -74,6 +98,7 @@ public class GTDCLI {
       * This method reloads the configuration before invoking the run function,
       * allowing a long-lived instance to react to configuration changes. */
     public static void reconfigure(String[] args) {
+
         /// If we do not have a long-running Nailgun instance we just call
         /// main.
         if (nailgunInst == null) main(args)
@@ -95,6 +120,55 @@ public class GTDCLI {
         if (configFile.exists())
             config = new ConfigSlurper().parse(configFile.toURL())
 
+        /// Setup logging
+        LoggerContext lc = (LoggerContext) LoggerFactory.getILoggerFactory()
+        lc.reset()
+
+        thresholdFilter = new ThresholdFilter()
+        loggingThreshold = config.defaultLoggingLevel ?: 'INFO'
+        thresholdFilter.level = loggingThreshold
+
+        infoAppender = new OutputStreamAppender()
+        otherAppender = new OutputStreamAppender()
+        PatternLayoutEncoder infoLayout = new PatternLayoutEncoder()
+        PatternLayoutEncoder otherLayout = new PatternLayoutEncoder()
+        LevelFilter acceptInfo = new LevelFilter()
+        rejectInfo = new LevelFilter()
+
+        [infoAppender, otherAppender, infoLayout, otherLayout, acceptInfo,
+         rejectInfo].each { it.context = lc }
+
+        // Setup filter and layout for INFO appender
+        infoLayout.context = lc
+        infoLayout.pattern = '%msg'
+        infoLayout.start()
+        acceptInfo.level = Level.INFO
+        acceptInfo.onMatch = FilterReply.ACCEPT
+        acceptInfo.onMismatch = FilterReply.DENY
+        acceptInfo.start()
+        infoAppender.encoder = infoLayout
+        infoAppender.outputStream = System.out
+        infoAppender.addFilter(acceptInfo)
+        infoAppender.start()
+
+        // Setup filters and layout for non-INFO appender
+        otherLayout.context = lc
+        otherLayout.pattern = '%level -- %msg%n'
+        otherLayout.start()
+        rejectInfo.level = Level.INFO
+        rejectInfo.onMatch = FilterReply.DENY
+        rejectInfo.start()
+        thresholdFilter.start()
+        otherAppender.encoder = otherLayout
+        otherAppender.outputStream = System.err
+        otherAppender.addFilter(rejectInfo)
+        otherAppender.addFilter(thresholdFilter)
+        otherAppender.start()
+
+        log = lc.getLogger(getClass())
+        log.addAppender(infoAppender)
+        log.addAppender(otherAppender)
+
         /// Configure the terminal width
         terminalWidth = (System.getenv().COLUMNS ?: config.terminalWidth ?: 79) as int
 
@@ -111,6 +185,8 @@ public class GTDCLI {
       * @org gtd.jdb-labs.com/cli/GTDCLI/run */
     protected void run(String[] args) {
         
+        log.debug("Args: $args")
+
         /// Simple CLI options:
         def cliDefinition = [
             /// -h, --help
@@ -137,18 +213,23 @@ public class GTDCLI {
         /// [3]: http://docs.oracle.com/javase/6/docs/api/java/util/LinkedList.html#poll()
         def parsedArgs = (opts.args as List) as LinkedList
 
+        log.debug("Parsed args: ${parsedArgs}")
+
         if (parsedArgs.size() < 1) printUsage()
 
         /// Make sure we are in a GTD directory.
         gtdDirs = findGtdRootDir(workingDir)
+        log.debug("gtdDirs:$EOL\t${gtdDirs}")
+
         if (!gtdDirs) {
-            println "fatal: '${workingDir.canonicalPath}'"
-            println "       is not a GTD repository (or any of the parent directories)."
+            log.error "fatal: '${workingDir.canonicalPath}'"
+            log.error "       is not a GTD repository (or any of the parent directories)."
             return }
 
         while (parsedArgs.peek()) {
             /// Pull off the first argument.
             def command = parsedArgs.poll()
+            log.trace("Processing command: ${command}")
 
             /// Match the first argument and invoke the proper command method.
             switch (command.toLowerCase()) {
@@ -160,8 +241,10 @@ public class GTDCLI {
                 case ~/new/: newAction(parsedArgs); break
                 case ~/tickler/: tickler(parsedArgs); break
                 case ~/ls|list/: ls(parsedArgs); break;
+                case ~/debug/: debug(parsedArgs); break;
+                case ~/delegate/: delegateAction(parsedArgs); break;
                 default: 
-                    println "Unrecognized command: ${command}"
+                    log.error "Unrecognized command: ${command}"
                     break } } }
 
     /** #### `process`
@@ -176,7 +259,7 @@ public class GTDCLI {
         if (path) {
             def givenDir = new File(path)
             if (!(gtdDirs = findGtdRootDir(givenDir))) {
-                println "'$path' is not a valid directory."; return }}
+                log.error "'$path' is not a valid directory."; return }}
 
         /// Start processing items
         gtdDirs.in.listFiles().collect { new Item(it) }.each { item ->
@@ -184,6 +267,7 @@ public class GTDCLI {
             println ""
             def response
             def readline = {stdin.nextLine().trim()}
+            def oldFile = item.file
 
             /// 1. Is it actionable?
             if (!item.title) item.title = filenameToString(item.file)
@@ -209,7 +293,6 @@ public class GTDCLI {
                             PropertyHelp.parse(parts[1].trim())
                         print "> " }
 
-                    def oldFile = item.file
                     item.file = new File(gtdDirs.incubate, item.file.name)
                     item.save()
                     oldFile.delete() }
@@ -224,7 +307,6 @@ public class GTDCLI {
                     readline();
 
                     def date = new DateMidnight().toString("YYYY-MM-dd")
-                    def oldFile = item.file
                     item.file = new File(gtdDirs.done, "$date-${item.file.name}")
                     item.save()
                     oldFile.delete()
@@ -250,7 +332,6 @@ public class GTDCLI {
 
                 /// Yes, this deserves it's own project folder.
                 if (response ==~ /yes|y/) {
-                    def oldFile = item.file
                     item.file = new File(gtdDirs.projects,
                                          stringToFilename(item.outcome))
                     item.save()
@@ -269,43 +350,46 @@ public class GTDCLI {
                     if (response =~ /del/) {
 
                         item.action = prompt([
-                            "Next action (who needs to do what).", ""])
+                            "Next action (who needs to do what)?", ""])
 
-                        def oldFile = item.file
-                        item.file = new File(gtdDirs.waiting,
-                                             stringToFilename(item.action))
-                        item.save()
-                        oldFile.delete()
-
-                        println "Moved to ${gtdDirs.waiting.name} folder." }
+                        item.file = new File(promptContext(gtdDirs.waiting),
+                                             stringToFilename(item.toString())) }
 
 
-                    /// Defer, move to teh *next-actions* folder.
+                    /// Defer, move to the *next-actions* folder.
                     else if (response =~ /def/) {
-                        item.action = prompt(["Next action.", ""])
+                        item.action = prompt(["Next action?", ""])
 
-                        def oldFile = item.file
-                        item.file = new File(gtdDirs["next-actions"],
-                                             stringToFilename(item.action))
-                        item.save()
-                        oldFile.delete()
-
-                        println "Moved to the ${gtdDirs['next-actions'].name} folder."
-                    }
+                        item.file = new File(promptContext(gtdDirs["next-actions"]),
+                                             stringToFilename(item.toString())) }
 
                     /// Forget for now, move it to the *tickler* folder.
                     else {
-                        item.action = prompt(["Next action.", ""])
+                        item.action = prompt(["Next action?", ""])
                         item.tickle = prompt([
                             "When do you want it to become active?",
                             "(YYYY-MM-DD)"])
 
-                        def oldFile = item.file
                         item.file = new File(gtdDirs.tickler,
-                                             stringToFilename(item.action))
+                                             stringToFilename(item.toString())) }
+                        
+                    item.save()
+                    oldFile.delete()
+
+                    println "Moved to " +
+                        getRelativePath(gtdDirs.root, item.file.parentFile)
+                        
+                    /// If we have a project property, and a corresponding
+                    /// project folder exists, copy the item there.
+                    def projectDir = new File(gtdDirs.projects,
+                                              item.project ?: '')
+                    if (item.project && projectDir.exists() &&
+                        projectDir.isDirectory()) {
+                        item.file = new File(projectDir,
+                                             stringToFilename(item.toString()))
                         item.save()
-                        oldFile.delete()
-                        println "Moved to the ${gtdDirs.tickler.name} folder." } } } } }
+                        println "Copied to " +
+                            getRelativePath(gtdDirs.root, item.file.parentFile) } } } } }
 
     /** #### `done`
       * Implement the `done` command to mark items as completed. For detailed
@@ -316,52 +400,61 @@ public class GTDCLI {
       */
     protected void done(LinkedList args) {
 
-        def selectedFilePath = args.poll()
-        def selectedFile = new File(selectedFilePath)
+        def selectedFilePath
 
-        if (!selectedFile) {
-            println "gtd done command requires a <action-file> parameter."
+        if (!args) {
+            log.error "The 'gtd done' command requires an <action-file> parameter."
             return }
 
-        def item
-        if (selectedFile.isAbsolute()) item = new Item(selectedFile)
-        else item = new Item(new File(workingDir, selectedFilePath))
+        while ((selectedFilePath = args.poll())) {
+            def item
+            def selectedFile = new File(selectedFilePath)
 
-        /// Move to the done folder.
-        def oldFile = item.file
-        def date = new DateMidnight().toString("YYYY-MM-dd")
-        item.file = new File(gtdDirs.done, "$date-${item.file.name}")
-        item.save()
+            if (!selectedFile.isAbsolute())
+                selectedFile = new File(workingDir, selectedFilePath)
 
-        /// Check if this item was in a project folder.
-        if (inPath(gtdDirs.projects, oldFile)) {
+            if (!selectedFile.exists() || !selectedFile.isFile()) {
+                log.error "File does not exist or is a directory:"
+                log.error "\t" + selectedFile.canonicalPath
+                continue }
 
-            /// Delete any copies of this item from the next actions folder.
-            findAllCopies(oldFile, gtdDirs."next-actions").each { file ->
-                println "Deleting duplicate entry from the " +
-                        "${file.parentFile.name} context."
-                file.delete() }
+            item = new Item(selectedFile)
 
-            /// Delete any copies of this item from the waiting folder.
-            findAllCopies(oldFile, gtdDirs.waiting).each { file ->
-                println "Deleting duplicate entry from the " +
-                    "${file.parentFile.name} waiting context."
-                file.delete() }}
+            /// Move to the done folder.
+            def oldFile = item.file
+            def date = new DateMidnight().toString("YYYY-MM-dd")
+            item.file = new File(gtdDirs.done, "$date-${item.file.name}")
+            item.save()
 
-        /// Check if this item was in the next-action or waiting folder.
-        if (inPath(gtdDirs["next-actions"], oldFile) ||
-            inPath(gtdDirs.waiting, oldFile)) {
+            /// Check if this item was in a project folder.
+            if (inPath(gtdDirs.projects, oldFile)) {
 
-            /// Delete any copies of this item from the projects folder.
-            findAllCopies(oldFile, gtdDirs.projects).each { file ->
-                println "Deleting duplicate entry from the " +
-                    "${file.parentFile.name} project."
-                file.delete() }}
+                /// Delete any copies of this item from the next actions folder.
+                findAllCopies(oldFile, gtdDirs["next-actions"]).each { file ->
+                    println "Deleting duplicate entry from the " +
+                            "${file.parentFile.name} context."
+                    if (file.exists()) file.delete() }
 
-        /// Delete the original
-        oldFile.delete()
+                /// Delete any copies of this item from the waiting folder.
+                findAllCopies(oldFile, gtdDirs.waiting).each { file ->
+                    println "Deleting duplicate entry from the " +
+                        "${file.parentFile.name} waiting context."
+                    if (file.exists()) file.delete() }}
 
-        println "'$item' marked as done." }
+            /// Check if this item was in the next-action or waiting folder.
+            if (inPath(gtdDirs["next-actions"], oldFile) ||
+                inPath(gtdDirs.waiting, oldFile)) {
+
+                /// Delete any copies of this item from the projects folder.
+                findAllCopies(oldFile, gtdDirs.projects).each { file ->
+                    println "Deleting duplicate entry from the " +
+                        "${file.parentFile.name} project."
+                    if (file.exists()) file.delete() }}
+
+            /// Delete the original
+            oldFile.delete()
+
+            println "'$item' marked as done." } }
     
     /** #### `calendar`
       * Implement the `calendar` command to show all the items which are
@@ -423,7 +516,7 @@ public class GTDCLI {
             if (!file.isAbsolute()) file = new File(workingDir, filePath)
 
             if (!file.isFile()) {
-                println "${file.canonicalPath} is not a regular file."
+                log.error "${file.canonicalPath} is not a regular file."
                 return }
 
             String originalRelativePath = getRelativePath(gtdDirs.root, file)
@@ -475,7 +568,16 @@ public class GTDCLI {
                 PropertyHelp.parse(parts[1].trim())
             print "> " }
 
-        item.save() }
+        item.save()
+        
+        /// If we have a project property, and a corresponding project folder
+        /// exists, copy the item there.
+        def projectDir = new File(gtdDirs.projects, item.project ?: '')
+        if (item.project && projectDir.exists() && projectDir.isDirectory()) {
+            item.file = new File(projectDir, stringToFilename(item.toString()))
+            item.save()
+            println "Copied to " +
+                getRelativePath(gtdDirs.root, item.file.parentFile) } }
 
     /** #### `tickler`
       * Implement the `tickler` command to move items in the *tickler* folder to
@@ -494,10 +596,10 @@ public class GTDCLI {
             /// If the item is scheduled to be tickled today (or in the past)
             /// then move it into the next-actions folder
             if ((item.tickle as DateMidnight) <= today) {
-                println "Moving '${item.action}' out of the tickler."
+                println "Moving '${item}' out of the tickler."
                 def oldFile = item.file
                 item.file = new File(gtdDirs."next-actions",
-                                     stringToFilename(item.action))
+                                     stringToFilename(item.toString()))
                 item.gtdProperties.remove("tickle")
                 item.save()
                 oldFile.delete() }}}
@@ -512,7 +614,7 @@ public class GTDCLI {
       */
     protected void ls(LinkedList args) {
 
-        def target = args.poll()
+        def target
 
         /// Temporary helper function to print all the items in a given
         /// directory.
@@ -520,29 +622,173 @@ public class GTDCLI {
             if (!dir.exists() || !dir.isDirectory()) return
             println "-- ${getRelativePath(gtdDirs.root, dir)} --"
             dir.eachFile { file ->
-                if (!file.exists() || !file.isFile() || file.isHidden())
+                if (!file.exists() || !file.isFile() || file.isHidden() ||
+                    file.name.startsWith('.'))
                     return
 
                 def item = new Item(file)
-                println item.action }
+                println item}
 
             println "" }
 
-        /// If we have a named context or project, look for those items
-        /// specifically
-        if (target) {
-
-            printItems(new File(gtdDirs['next-actions'], target))
-            printItems(new File(gtdDirs.waiting, target))
-            printItems(new File(gtdDirs.projects, target)) }
-
-        /// Otherwise print all items in the *next-actions* and *waiting*
-        /// folders and all their subfolders.
-        else {
+        /// If we have no named context or project, print all items in the
+        /// *next-actions* and *waiting* folders and all their subfolders.
+        if (!args) {
             printItems(gtdDirs['next-actions'])
             printItems(gtdDirs['waiting'])
             gtdDirs['next-actions'].eachDir(printItems)
-            gtdDirs['waiting'].eachDir(printItems) } }
+            gtdDirs['waiting'].eachDir(printItems) }
+
+        /// For every name we do have, look for a project or context and
+        /// recursively print their contents.
+        else while ((target = args.poll())) {
+            printItems(new File(gtdDirs['next-actions'], target))
+            printItems(new File(gtdDirs.waiting, target))
+            printItems(new File(gtdDirs.projects, target)) } }
+
+    /** #### `debug`
+      * Print out debug information. Currently this prints out the internal
+      * state of the CLI. I may add other subcommands if the need arises. */
+    protected void debug(LinkedList args) {
+
+        def command = args.poll()
+
+        if (!command || "state" == command) {
+            println "GTD CLI v${VERSION}"
+            println ""
+            println "-- General"
+            println "   Running under nailgun?  ${nailgunInst ? 'yes' : 'no'}"
+            println "   Terminal width          ${terminalWidth}"
+            println "   Working directory       ${workingDir.canonicalPath}"
+            println ""
+            println "-- GTD Directories"
+            gtdDirs.each { k, v -> println "   ${k.padRight(12)} ${v.canonicalPath}" }
+            println ""
+            println "-- Logging"
+            println "   Threshold   ${loggingThreshold}"
+            log.trace "   Message from TRACE"
+            log.debug "   Message from DEBUG"
+            log.info "            Message from INFO${EOL}"
+            log.warn "    Message from WARN"
+            log.error "   Message from ERROR" }
+
+        else if ("loglevel" == command) {
+            def level = args.poll()
+
+            if (!level)
+                log.error "debug loglevel command requires additional arguments."
+
+            else setLoggingThreshold(level) }
+        else log.error "Unrecognized debug command: '${command}'." }
+
+    /** #### `delegate`
+      * Implement the `delegate` command. This allows you to move an action
+      * from the next action list to the delegate list, providing the name of
+      * the responsible party and optionally renaming the item. For detailed
+      * information see the [online help][help-delegate] by running
+      * `gtd help delegate`.
+      *
+      * [help-delegate]: jlp://gtd.jdb-labs.com/cli/GTDCLI/help/delegate 
+      */
+    protected void delegateAction(LinkedList args) {
+        def selectedFilePath
+
+        if (!args) {
+            log.error("The 'gtd delegate' command requires an " +
+                "<action-file> parameter.")
+            return }
+
+        while ((selectedFilePath = args.poll())) {
+            
+            Item item
+            File oldFile, newContextDir
+            File selectedFile = new File(selectedFilePath)
+
+            if (!selectedFile.isAbsolute())
+                selectedFile = new File(workingDir, selectedFilePath)
+
+            if (!selectedFile.exists() || !selectedFile.isFile()) {
+                log.error "File does not exist or is a directory:"
+                log.error "\t" + selectedFile.canonicalPath
+                continue }
+
+            item = new Item(selectedFile)
+            oldFile = item.file
+
+            /// Move to the waiting folder, with the name of the delegatee and
+            /// optionally a new next action.
+            def delegatee = prompt(
+["Who is responsible for the next action? You may also update the next action",
+ "by including it after a colon (e.g. 'Delegatee Name: New next action.').",
+ ""])
+            
+            if (delegatee.indexOf(':') > 0) item.action = delegatee
+            else item.action = delegatee + ': ' + item.action
+
+            /// Check if this item was in a project folder.
+            if (inPath(gtdDirs.projects, oldFile)) {
+
+                /// Rename the file in the project folder
+                item.file = new File(oldFile.parentFile,
+                    stringToFilename(item.toString()))
+                item.save()
+
+                /// Move any copies of this item from the next actions folder
+                /// to the waiting folder.
+                findAllCopies(oldFile, gtdDirs['next-actions']).each { dupFile ->
+                    println "Moving duplicate entry from the " +
+                            "${dupFile.parentFile.name} context."
+
+                    /// Retain the item's context if possible
+                    newContextDir = new File(gtdDirs.waiting,
+                        dupFile.parentFile.name)
+
+                    /// Instead of creating a new Item object, let's just
+                    /// create a copy of the existing one on the filesystem by
+                    /// saving the existing object to a the new location.
+                    if (newContextDir.exists() && newContextDir.isDirectory()) {
+                        item.file = new File(newContextDir,
+                            stringToFilename(item.toString())) }
+
+                    else { item.file = new File(gtdDirs.waiting,
+                        stringToFilename(item.toString())) }
+
+                    item.save()
+                    dupfile.delete() }}
+                    
+            /// Check if this item was in the next-action folder.
+            else if (inPath(gtdDirs["next-actions"], oldFile) ||
+                inPath(gtdDirs.waiting, oldFile)) {
+
+                /// Retain the item's context if possible.
+                newContextDir = new File(gtdDirs.waiting,
+                    oldFile.parentFile.name)
+
+                /// Move the file to the waiting folder.
+                if (newContextDir.exists() && newContextDir.isDirectory()) {
+                    item.file = new File(newContextDir,
+                        stringToFilename(item.toString())) }
+
+                else { item.file = new File(gtdDirs.waiting,
+                    stringToFilename(item.toString())) }
+
+                item.save()
+
+                /// Rename any copies of this item from the projects folder.
+                findAllCopies(oldFile, gtdDirs.projects).each { dupFile ->
+                    println "Renaming duplicate entry from the " +
+                        "${dupFile.parentFile.name} project."
+                    item.file =  new File(dupFile.parentFile,
+                        stringToFilename(item.toString()))
+
+                    item.save()
+                    dupFile.delete() } }
+
+            /// Delete the original file.
+            oldFile.delete() } }
+
+    private void print(String msg) { log.info(msg) }
+    private void println(String line) { log.info(line + EOL) }
 
     /** #### `help`
       * Implement the `help` command which provides the online-help. Users can
@@ -689,6 +935,16 @@ This command lists all the tasks for a given context or project. The purpose is
 to list in one place items that are sitting in the next-actions folder or the
 waiting folder for a specific context or list items for a given project. If no
 context or project is named, all contexts are listed."""
+
+                /// Online help for the `delegate` command.
+                /// @org gtd.jdb-labs.com/cli/GTDCLI/help/delegate
+                case ~/delegate/: println """\
+usage gtd delegate [<action-file> ...]
+
+This command moves an action item from a next-action context or project folder
+to the delegate folder. It allows the user to attach the name of the newly
+responsible party and optionally rename the item."""
+
             }
         }
     }
@@ -706,6 +962,29 @@ context or project is named, all contexts are listed."""
         
         return line }
 
+    /** #### `promptContext`
+      * Prompt the user to choose a context (subdirectory of the given
+      * directory). */
+    protected File promptContext(File baseDir) {
+        print "Context?> "
+        def line
+        def contextFile
+
+        line = stdin.nextLine().trim()
+        contextFile = line ? new File(baseDir, line) : baseDir
+
+        while (!contextFile.exists() || !contextFile.isDirectory()) {
+            log.warn "'$line' is not a valid context."
+            println "Available contexts:"
+            baseDir.eachDir { print "\t${it.name}"}
+            println ""
+
+            print "Context?> "
+            line = stdin.nextLine().trim()
+            contextFile = line ? new File(baseDir, line) : baseDir }
+        
+        return contextFile }
+
     /** #### `filenameToString`
       * The default pretty-print conversion for filenames. */
     public static String filenameToString(File f) {
@@ -716,7 +995,7 @@ context or project is named, all contexts are listed."""
       * palatable for a filename. */
     public static String stringToFilename(String s) {
         return s.replaceAll(/\s/, '-').
-                replaceAll(/[';:(\.$)]/, '').
+                replaceAll(/[';:(\.$\/)]/, '').
                 toLowerCase() }
 }
 

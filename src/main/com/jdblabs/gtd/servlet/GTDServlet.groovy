@@ -120,7 +120,7 @@ public class GTDServlet extends HttpServlet {
         /// Get this user's session
         HttpSession session = request.getSession(true);
 
-        /// If the user is posting to `/gtd/login` then let's try to
+        /// If the user is posting to `/login` then let's try to
         /// authenticate them. We don't care about the state of the existing
         /// session.
         if (request.servletPath == '/login') {
@@ -161,8 +161,8 @@ public class GTDServlet extends HttpServlet {
         /// Right now there is no other endpoint that supports `POST`, so return
         /// `404 Not Found` or `405 Method Not Allowed`
         switch (request.servletPath) {
-            case ~/\/gtd\/contexts.*/: 
-            case ~/\/gtd\/projects.*/: 
+            case ~/\/contexts.*/: 
+            case ~/\/projects.*/: 
                 response.status = SC_METHOD_NOT_ALLOWED
                 return
             default:
@@ -207,14 +207,14 @@ public class GTDServlet extends HttpServlet {
 
         switch(request.servletPath) {
 
-            /// If they are invoking `/gtd/logout` then invalidate their session
+            /// If they are invoking `/logout` then invalidate their session
             /// and return `200 OK`
             case "/logout":
                 session.removeAttribute("authenticated")
                 session.invalidate()
                 break
 
-            /// ##### `/gtd/contexts`
+            /// ##### `/contexts`
             /// Return the list of contexts that are readable by this user.
             case "/contexts":
 
@@ -230,7 +230,7 @@ public class GTDServlet extends HttpServlet {
                 writeJSON(returnData, response)
                 break
 
-            /// ##### `/gtd/contexts/<contextId>`
+            /// ##### `/contexts/<contextId>`
             /// Return data for the requested context, assuming it is
             /// readable for this user.
             case ~'/contexts/(.+)':
@@ -251,7 +251,7 @@ public class GTDServlet extends HttpServlet {
                 writeJSON(returnData, response)
                 break
 
-            /// ##### `/gtd/projects`
+            /// ##### `/projects`
             /// Return the list of projects that are readable for this user.
             case "/projects":
                 /// Filter the project directories to find the ones that the
@@ -264,7 +264,7 @@ public class GTDServlet extends HttpServlet {
                 writeJSON(returnData, response)
                 break
 
-            /// ##### `/gtd/projects/<projectId>`
+            /// ##### `/projects/<projectId>`
             /// Return data for the requested project, assuming it is readable
             /// for this user.
             case ~'/projects/(.+)':
@@ -286,7 +286,7 @@ public class GTDServlet extends HttpServlet {
                 writeJSON(returnData, response)
                 break
 
-            /// ##### `/gtd/next-actions/<contexts-and-projects>`
+            /// ##### `/next-actions/<contexts-and-projects>`
             /// Return all of the items contained in the named contexts and
             /// projects, assuming the user has access to them.
             /// `<contexts-and-projects>` is expected to be a comma-delimited
